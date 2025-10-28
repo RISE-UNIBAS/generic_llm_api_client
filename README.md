@@ -4,6 +4,23 @@ A unified, provider-agnostic Python client for multiple LLM APIs. Query any LLM 
 
 **Perfect for**: Research workflows, benchmarking studies, automated testing, and applications that need to work with multiple LLM providers without dealing with their individual APIs.
 
+## Important Note
+
+This package is a **convenience wrapper** for working with multiple LLM providers through a unified interface. It is **not intended as a replacement** for the official provider libraries (openai, anthropic, google-genai, etc.).
+
+### Use this package when:
+- You need to query multiple LLM providers in the same project
+- You're building benchmarking or comparison tools
+- You want a consistent interface across providers
+- You need provider-agnostic code for research workflows
+
+### Use the official libraries when:
+- You need cutting-edge features on day one of release
+- You require provider-specific advanced features
+- You only work with a single provider
+
+**Update pace:** This package is maintained by a small team and may not immediately support every new feature from upstream providers. We prioritize stability and cross-provider compatibility over bleeding-edge feature coverage.
+
 ## Features
 
 - **Provider-Agnostic**: Single interface for OpenAI, Anthropic, Google, Mistral, DeepSeek, Qwen, and OpenRouter
@@ -40,14 +57,14 @@ print(f"Time: {duration:.2f}s")
 
 | Provider | ID | Multimodal | Structured Output |
 |----------|-----|-----------|-------------------|
-| OpenAI | `openai` |  |  |
-| Anthropic Claude | `anthropic` |  |  (via tools) |
-| Google Gemini | `genai` |  |  |
-| Mistral | `mistral` |  |  |
-| DeepSeek | `deepseek` |  |  |
-| Qwen | `qwen` |  |  |
-| OpenRouter | `openrouter` |  |  |
-| sciCORE | `scicore` |  |  |
+| OpenAI | `openai` | Yes | Yes |
+| Anthropic Claude | `anthropic` | Yes | Yes (via tools) |
+| Google Gemini | `genai` | Yes | Yes |
+| Mistral | `mistral` | Yes | Yes |
+| DeepSeek | `deepseek` | Yes | Yes |
+| Qwen | `qwen` | Yes | Yes |
+| OpenRouter | `openrouter` | Yes | Yes |
+| sciCORE | `scicore` | Yes | Yes |
 
 ## Usage Examples
 
@@ -325,16 +342,16 @@ if client.has_multimodal_support():
 
 ```
 ai_client/
- __init__.py           # Package exports
- base_client.py        # BaseAIClient + factory
- response.py           # LLMResponse, Usage dataclasses
- utils.py              # Retry logic, exceptions
- openai_client.py      # OpenAI implementation
- claude_client.py      # Anthropic Claude
- gemini_client.py      # Google Gemini
- mistral_client.py     # Mistral AI
- deepseek_client.py    # DeepSeek
- qwen_client.py        # Qwen
+  __init__.py           # Package exports
+  base_client.py        # BaseAIClient + factory
+  response.py           # LLMResponse, Usage dataclasses
+  utils.py              # Retry logic, exceptions, utilities
+  openai_client.py      # OpenAI implementation
+  claude_client.py      # Anthropic Claude
+  gemini_client.py      # Google Gemini
+  mistral_client.py     # Mistral AI
+  deepseek_client.py    # DeepSeek
+  qwen_client.py        # Qwen
 ```
 
 ## Requirements
@@ -350,7 +367,7 @@ ai_client/
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/generic-llm-api-client.git
+git clone https://github.com/RISE-UNIBAS/generic-llm-api-client.git
 cd generic-llm-api-client
 
 # Install in development mode
@@ -359,8 +376,11 @@ pip install -e ".[dev]"
 # Run tests
 pytest
 
+# Run integration tests (requires API keys)
+pytest -m integration
+
 # Format code
-black ai_client/
+black ai_client tests
 
 # Type checking
 mypy ai_client/
@@ -369,6 +389,7 @@ mypy ai_client/
 ## Documentation
 
 - **[EXAMPLES.md](EXAMPLES.md)** - Comprehensive usage examples
+- **[PUBLISHING.md](PUBLISHING.md)** - Guide for maintainers on publishing releases
 
 ## Contributing
 
