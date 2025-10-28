@@ -268,17 +268,34 @@ class TestSciCOREIntegration:
     def test_scicore_basic_prompt(self):
         """Test basic sciCORE prompt with real API."""
         # Note: Update base_url and model according to your sciCORE setup
+        base_url = os.getenv('SCICORE_BASE_URL', 'https://api.scicore.unibas.ch/v1')
+        model = os.getenv('SCICORE_MODEL', 'gpt-4')
+
         client = create_ai_client(
             'scicore',
             api_key=os.getenv('SCICORE_API_KEY'),
-            base_url=os.getenv('SCICORE_BASE_URL', 'https://api.scicore.unibas.ch/v1')
+            base_url=base_url
         )
-        # Use whichever model is available on your sciCORE instance
-        model = os.getenv('SCICORE_MODEL', 'gpt-4')
         response, duration = client.prompt(model, SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
+
+        # If response is empty, check if it's an error
+        if response.text == "":
+            # Provide helpful error message
+            if response.finish_reason == "error":
+                pytest.skip(
+                    f"sciCORE API error (check SCICORE_BASE_URL and SCICORE_MODEL): "
+                    f"{response.raw_response.get('error', 'Unknown error')}"
+                )
+            else:
+                pytest.fail(
+                    f"Empty response from sciCORE. "
+                    f"Check SCICORE_BASE_URL={base_url} and SCICORE_MODEL={model}. "
+                    f"Finish reason: {response.finish_reason}"
+                )
+
         assert response.text != ""
         assert response.provider == "openai"  # sciCORE uses OpenAI client
         assert response.finish_reason in ["stop", "end_turn", "length"]
