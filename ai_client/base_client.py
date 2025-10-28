@@ -6,6 +6,7 @@ for all AI provider client implementations. It handles shared functionality
 like timing and basic client lifecycle, while leaving provider-specific
 implementations to subclasses.
 """
+
 import abc
 import time
 import asyncio
@@ -45,7 +46,7 @@ class BaseAIClient(abc.ABC):
         api_key: str,
         system_prompt: Optional[str] = None,
         base_url: Optional[str] = None,
-        **settings
+        **settings,
     ):
         """
         Initialize the AI client base.
@@ -59,7 +60,9 @@ class BaseAIClient(abc.ABC):
         self.init_time = time.time()
         self.end_time = None
         self.api_key = api_key
-        self.system_prompt = system_prompt or "A helpful assistant that provides accurate information."
+        self.system_prompt = (
+            system_prompt or "A helpful assistant that provides accurate information."
+        )
         self.base_url = base_url
         self.settings = settings
         self.api_client = None
@@ -109,7 +112,7 @@ class BaseAIClient(abc.ABC):
         Returns:
             True if the resource is a URL, False if it's a file path
         """
-        return resource.startswith(('http://', 'https://'))
+        return resource.startswith(("http://", "https://"))
 
     def prompt(
         self,
@@ -118,7 +121,7 @@ class BaseAIClient(abc.ABC):
         images: Optional[List[str]] = None,
         system_prompt: Optional[str] = None,
         response_format: Optional[Any] = None,
-        **kwargs
+        **kwargs,
     ) -> Tuple[LLMResponse, float]:
         """
         Send a prompt to the AI model and get the response.
@@ -156,7 +159,7 @@ class BaseAIClient(abc.ABC):
                 images=image_list,
                 system_prompt=sys_prompt,
                 response_format=response_format,
-                **kwargs
+                **kwargs,
             )
         except Exception as e:
             # Create error response
@@ -179,7 +182,7 @@ class BaseAIClient(abc.ABC):
             max_retries=3,
             initial_delay=1.0,
             max_delay=60.0,
-            retryable_exceptions=(Exception,)  # Provider-specific exceptions will be caught
+            retryable_exceptions=(Exception,),  # Provider-specific exceptions will be caught
         )
 
         return retry_func(**kwargs)
@@ -192,7 +195,7 @@ class BaseAIClient(abc.ABC):
         images: List[str],
         system_prompt: str,
         response_format: Optional[Any],
-        **kwargs
+        **kwargs,
     ) -> LLMResponse:
         """
         Provider-specific prompt implementation.
@@ -217,7 +220,7 @@ class BaseAIClient(abc.ABC):
         images: Optional[List[str]] = None,
         system_prompt: Optional[str] = None,
         response_format: Optional[Any] = None,
-        **kwargs
+        **kwargs,
     ) -> Tuple[LLMResponse, float]:
         """
         Async version of prompt() for parallel processing.
@@ -237,7 +240,7 @@ class BaseAIClient(abc.ABC):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None,
-            lambda: self.prompt(model, prompt, images, system_prompt, response_format, **kwargs)
+            lambda: self.prompt(model, prompt, images, system_prompt, response_format, **kwargs),
         )
 
     def _create_error_response(self, model: str, error_message: str) -> LLMResponse:
@@ -258,7 +261,7 @@ class BaseAIClient(abc.ABC):
             finish_reason="error",
             usage=Usage(),
             raw_response={"error": error_message},
-            duration=0.0
+            duration=0.0,
         )
 
     @abc.abstractmethod
@@ -291,7 +294,7 @@ def create_ai_client(
     api_key: str,
     system_prompt: Optional[str] = None,
     base_url: Optional[str] = None,
-    **settings
+    **settings,
 ) -> BaseAIClient:
     """
     Factory function to create an appropriate AI client for the given provider.
@@ -330,14 +333,14 @@ def create_ai_client(
     from .qwen_client import QwenClient
 
     provider_map = {
-        'openai': OpenAIClient,
-        'genai': GeminiClient,
-        'anthropic': ClaudeClient,
-        'mistral': MistralClient,
-        'deepseek': DeepSeekClient,
-        'qwen': QwenClient,
-        'openrouter': OpenAIClient,  # Uses OpenAI-compatible API
-        'scicore': OpenAIClient,     # Uses OpenAI-compatible API
+        "openai": OpenAIClient,
+        "genai": GeminiClient,
+        "anthropic": ClaudeClient,
+        "mistral": MistralClient,
+        "deepseek": DeepSeekClient,
+        "qwen": QwenClient,
+        "openrouter": OpenAIClient,  # Uses OpenAI-compatible API
+        "scicore": OpenAIClient,  # Uses OpenAI-compatible API
     }
 
     if provider not in provider_map:

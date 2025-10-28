@@ -1,6 +1,7 @@
 """
 Shared test fixtures and configuration for pytest.
 """
+
 import pytest
 from unittest.mock import Mock, MagicMock
 from datetime import datetime
@@ -77,10 +78,10 @@ def sample_image_path(tmp_path):
 
     # Create a simple 100x100 image with a red square on white background
     image_file = tmp_path / "test_image.png"
-    img = Image.new('RGB', (100, 100), color='white')
+    img = Image.new("RGB", (100, 100), color="white")
     draw = ImageDraw.Draw(img)
-    draw.rectangle([25, 25, 75, 75], fill='red')
-    img.save(str(image_file), 'PNG')
+    draw.rectangle([25, 25, 75, 75], fill="red")
+    img.save(str(image_file), "PNG")
 
     return str(image_file)
 

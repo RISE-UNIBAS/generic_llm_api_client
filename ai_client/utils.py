@@ -4,23 +4,26 @@ Utility functions for AI client operations.
 This module provides common utilities like retry logic, rate limiting,
 and error handling for LLM API interactions.
 """
+
 import time
 import logging
 from typing import Callable, TypeVar, Optional
 from functools import wraps
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
 
 
 class RateLimitError(Exception):
     """Raised when rate limit is exceeded."""
+
     pass
 
 
 class APIError(Exception):
     """Base exception for API errors."""
+
     pass
 
 
@@ -30,7 +33,7 @@ def retry_with_exponential_backoff(
     initial_delay: float = 1.0,
     max_delay: float = 60.0,
     exponential_base: float = 2.0,
-    retryable_exceptions: tuple = (Exception,)
+    retryable_exceptions: tuple = (Exception,),
 ) -> Callable[..., T]:
     """
     Retry a function with exponential backoff.
@@ -46,6 +49,7 @@ def retry_with_exponential_backoff(
     Returns:
         Wrapped function with retry logic
     """
+
     @wraps(func)
     def wrapper(*args, **kwargs) -> T:
         delay = initial_delay
@@ -62,7 +66,7 @@ def retry_with_exponential_backoff(
                     raise
 
                 # Calculate delay with exponential backoff
-                delay = min(initial_delay * (exponential_base ** attempt), max_delay)
+                delay = min(initial_delay * (exponential_base**attempt), max_delay)
 
                 logger.warning(
                     f"Attempt {attempt + 1}/{max_retries + 1} failed for {func.__name__}: {e}. "
@@ -86,12 +90,12 @@ def is_rate_limit_error(exception: Exception) -> bool:
     """
     error_message = str(exception).lower()
     rate_limit_indicators = [
-        'rate limit',
-        'rate_limit',
-        'too many requests',
-        '429',
-        'quota exceeded',
-        'resource_exhausted'
+        "rate limit",
+        "rate_limit",
+        "too many requests",
+        "429",
+        "quota exceeded",
+        "resource_exhausted",
     ]
 
     return any(indicator in error_message for indicator in rate_limit_indicators)
@@ -107,11 +111,8 @@ def get_retry_delay_from_error(exception: Exception) -> Optional[float]:
 
     # Try to extract "retry after X seconds" patterns
     import re
-    patterns = [
-        r'retry after (\d+)',
-        r'retry in (\d+)',
-        r'wait (\d+) seconds'
-    ]
+
+    patterns = [r"retry after (\d+)", r"retry in (\d+)", r"wait (\d+) seconds"]
 
     for pattern in patterns:
         match = re.search(pattern, error_message)
@@ -133,17 +134,18 @@ def detect_image_mime_type(file_path: str) -> str:
         Defaults to "image/jpeg" if extension is not recognized
     """
     import os
+
     ext = os.path.splitext(file_path)[1].lower()
 
     mime_types = {
-        '.png': 'image/png',
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.gif': 'image/gif',
-        '.webp': 'image/webp',
-        '.bmp': 'image/bmp',
-        '.tiff': 'image/tiff',
-        '.tif': 'image/tiff',
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".bmp": "image/bmp",
+        ".tiff": "image/tiff",
+        ".tif": "image/tiff",
     }
 
-    return mime_types.get(ext, 'image/jpeg')
+    return mime_types.get(ext, "image/jpeg")

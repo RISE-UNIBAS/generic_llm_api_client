@@ -5,6 +5,7 @@ This module provides the GeminiClient class, which implements the BaseAIClient
 interface specifically for Google's Gemini API, supporting both text-only and
 multimodal (text + images) content.
 """
+
 import base64
 import json
 import logging
@@ -62,22 +63,25 @@ class GeminiClient(BaseAIClient):
                     if response.status_code == 200:
                         image_data = response.content
                     else:
-                        logger.error(f"Failed to fetch image from URL {resource}: {response.status_code}")
+                        logger.error(
+                            f"Failed to fetch image from URL {resource}: {response.status_code}"
+                        )
                         continue
                 else:
                     # For local files, read the image
-                    with open(resource, 'rb') as f:
+                    with open(resource, "rb") as f:
                         image_data = f.read()
 
                 # Detect MIME type from file extension
                 from .utils import detect_image_mime_type
+
                 mime_type = detect_image_mime_type(resource)
 
                 # Create image part
                 image_part = Part(
                     inline_data={
                         "mime_type": mime_type,
-                        "data": base64.b64encode(image_data).decode('utf-8')
+                        "data": base64.b64encode(image_data).decode("utf-8"),
                     }
                 )
                 contents.append(image_part)
@@ -90,8 +94,8 @@ class GeminiClient(BaseAIClient):
     def _remove_defaults_from_schema(schema):
         """Recursively remove default values from JSON schema (for GenAI compatibility)."""
         if isinstance(schema, dict):
-            if 'default' in schema:
-                del schema['default']
+            if "default" in schema:
+                del schema["default"]
             for key, value in schema.items():
                 if isinstance(value, (dict, list)):
                     GeminiClient._remove_defaults_from_schema(value)
@@ -107,7 +111,7 @@ class GeminiClient(BaseAIClient):
         images: List[str],
         system_prompt: str,
         response_format: Optional[Any],
-        **kwargs
+        **kwargs,
     ) -> LLMResponse:
         """
         Send a prompt to the Gemini model and get the response.
@@ -133,20 +137,27 @@ class GeminiClient(BaseAIClient):
         generation_config = {}
 
         # Extract Gemini-specific parameters
-        optional_params = ['temperature', 'top_p', 'top_k', 'max_output_tokens', 'candidate_count', 'stop_sequences']
+        optional_params = [
+            "temperature",
+            "top_p",
+            "top_k",
+            "max_output_tokens",
+            "candidate_count",
+            "stop_sequences",
+        ]
         for param in optional_params:
             value = kwargs.get(param, self.settings.get(param))
             if value is not None:
                 generation_config[param] = value
 
         # Handle structured output
-        if response_format and hasattr(response_format, 'model_json_schema'):
+        if response_format and hasattr(response_format, "model_json_schema"):
             schema = response_format.model_json_schema()
             # GenAI doesn't support default values in schema
             self._remove_defaults_from_schema(schema)
 
-            generation_config['response_mime_type'] = "application/json"
-            generation_config['response_schema'] = schema
+            generation_config["response_mime_type"] = "application/json"
+            generation_config["response_schema"] = schema
 
         # Generate content
         # Try different approaches based on what parameters are available
@@ -155,29 +166,23 @@ class GeminiClient(BaseAIClient):
                 # Try passing config as a GenerateContentConfig object
                 config = GenerateContentConfig(**generation_config)
                 raw_response = self.api_client.models.generate_content(
-                    model=model,
-                    contents=contents,
-                    config=config
+                    model=model, contents=contents, config=config
                 )
             else:
                 raw_response = self.api_client.models.generate_content(
-                    model=model,
-                    contents=contents
+                    model=model, contents=contents
                 )
         except TypeError as e:
             # If config parameter doesn't work, try passing generation_config directly
-            if 'config' in str(e):
+            if "config" in str(e):
                 logger.warning(f"Config parameter not accepted, trying alternative API: {e}")
                 if generation_config:
                     raw_response = self.api_client.models.generate_content(
-                        model=model,
-                        contents=contents,
-                        generation_config=generation_config
+                        model=model, contents=contents, generation_config=generation_config
                     )
                 else:
                     raw_response = self.api_client.models.generate_content(
-                        model=model,
-                        contents=contents
+                        model=model, contents=contents
                     )
             else:
                 raise
@@ -185,10 +190,7 @@ class GeminiClient(BaseAIClient):
         return self._create_response_from_raw(raw_response, model, response_format)
 
     def _create_response_from_raw(
-        self,
-        raw_response: Any,
-        model: str,
-        response_format: Optional[Any]
+        self, raw_response: Any, model: str, response_format: Optional[Any]
     ) -> LLMResponse:
         """
         Create LLMResponse from Gemini raw response.
@@ -201,10 +203,10 @@ class GeminiClient(BaseAIClient):
         Returns:
             LLMResponse object
         """
-        text = raw_response.text if hasattr(raw_response, 'text') else ""
+        text = raw_response.text if hasattr(raw_response, "text") else ""
 
         # If response_format was provided, try to validate
-        if response_format and hasattr(response_format, 'model_json_schema') and text:
+        if response_format and hasattr(response_format, "model_json_schema") and text:
             try:
                 json_data = json.loads(text)
                 validated = response_format(**json_data)
@@ -214,23 +216,23 @@ class GeminiClient(BaseAIClient):
                 # Keep original text
 
         usage = Usage()
-        if hasattr(raw_response, 'usage_metadata'):
+        if hasattr(raw_response, "usage_metadata"):
             usage = Usage(
                 input_tokens=raw_response.usage_metadata.prompt_token_count,
                 output_tokens=raw_response.usage_metadata.candidates_token_count,
-                total_tokens=raw_response.usage_metadata.total_token_count
+                total_tokens=raw_response.usage_metadata.total_token_count,
             )
 
         # Determine finish reason
         finish_reason = "unknown"
-        if hasattr(raw_response, 'candidates') and raw_response.candidates:
+        if hasattr(raw_response, "candidates") and raw_response.candidates:
             candidate = raw_response.candidates[0]
-            if hasattr(candidate, 'finish_reason'):
+            if hasattr(candidate, "finish_reason"):
                 # Extract the value from the enum (e.g., FinishReason.STOP -> 'STOP')
                 fr = candidate.finish_reason
-                if hasattr(fr, 'value'):
+                if hasattr(fr, "value"):
                     finish_reason = fr.value
-                elif hasattr(fr, 'name'):
+                elif hasattr(fr, "name"):
                     finish_reason = fr.name
                 else:
                     finish_reason = str(fr)
@@ -241,7 +243,7 @@ class GeminiClient(BaseAIClient):
             provider=self.PROVIDER_ID,
             finish_reason=finish_reason,
             usage=usage,
-            raw_response=raw_response
+            raw_response=raw_response,
         )
 
     def get_model_list(self) -> List[Tuple[str, Optional[str]]]:
@@ -256,9 +258,9 @@ class GeminiClient(BaseAIClient):
         try:
             raw_list = self.api_client.models.list()
             for model in raw_list:
-                model_name = model.name if hasattr(model, 'name') else str(model)
+                model_name = model.name if hasattr(model, "name") else str(model)
                 # Remove 'models/' prefix if present
-                if model_name.startswith('models/'):
+                if model_name.startswith("models/"):
                     model_name = model_name[7:]
                 model_list.append((model_name, None))
         except Exception as e:

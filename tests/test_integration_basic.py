@@ -6,6 +6,7 @@ Run with: pytest -m integration tests/test_integration_basic.py
 
 Set API keys in .env file (see .env.example for template).
 """
+
 import os
 import pytest
 from dotenv import load_dotenv
@@ -26,19 +27,21 @@ class TestOpenAIIntegration:
     @pytest.fixture(autouse=True)
     def skip_if_no_api_key(self):
         """Skip test if API key not set."""
-        if not os.getenv('OPENAI_API_KEY'):
+        if not os.getenv("OPENAI_API_KEY"):
             pytest.skip("OPENAI_API_KEY not set")
 
     def test_openai_basic_prompt(self):
         """Test basic OpenAI prompt with real API."""
-        client = create_ai_client('openai', api_key=os.getenv('OPENAI_API_KEY'))
-        response, duration = client.prompt('gpt-4o-mini', SIMPLE_PROMPT)
+        client = create_ai_client("openai", api_key=os.getenv("OPENAI_API_KEY"))
+        response, duration = client.prompt("gpt-4o-mini", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
         assert response.text != ""
         assert response.provider == "openai"
-        assert response.model.startswith("gpt-4o-mini")  # API returns versioned names like gpt-4o-mini-2024-07-18
+        assert response.model.startswith(
+            "gpt-4o-mini"
+        )  # API returns versioned names like gpt-4o-mini-2024-07-18
         assert response.finish_reason in ["stop", "end_turn", "length"]
 
         # Verify usage tracking
@@ -60,13 +63,13 @@ class TestClaudeIntegration:
     @pytest.fixture(autouse=True)
     def skip_if_no_api_key(self):
         """Skip test if API key not set."""
-        if not os.getenv('ANTHROPIC_API_KEY'):
+        if not os.getenv("ANTHROPIC_API_KEY"):
             pytest.skip("ANTHROPIC_API_KEY not set")
 
     def test_claude_basic_prompt(self):
         """Test basic Claude prompt with real API."""
-        client = create_ai_client('anthropic', api_key=os.getenv('ANTHROPIC_API_KEY'))
-        response, duration = client.prompt('claude-3-5-haiku-20241022', SIMPLE_PROMPT)
+        client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
+        response, duration = client.prompt("claude-3-5-haiku-20241022", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -93,13 +96,13 @@ class TestGeminiIntegration:
     @pytest.fixture(autouse=True)
     def skip_if_no_api_key(self):
         """Skip test if API key not set."""
-        if not os.getenv('GOOGLE_API_KEY'):
+        if not os.getenv("GOOGLE_API_KEY"):
             pytest.skip("GOOGLE_API_KEY not set")
 
     def test_gemini_basic_prompt(self):
         """Test basic Gemini prompt with real API."""
-        client = create_ai_client('genai', api_key=os.getenv('GOOGLE_API_KEY'))
-        response, duration = client.prompt('gemini-2.0-flash-exp', SIMPLE_PROMPT)
+        client = create_ai_client("genai", api_key=os.getenv("GOOGLE_API_KEY"))
+        response, duration = client.prompt("gemini-2.0-flash-exp", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -126,13 +129,13 @@ class TestMistralIntegration:
     @pytest.fixture(autouse=True)
     def skip_if_no_api_key(self):
         """Skip test if API key not set."""
-        if not os.getenv('MISTRAL_API_KEY'):
+        if not os.getenv("MISTRAL_API_KEY"):
             pytest.skip("MISTRAL_API_KEY not set")
 
     def test_mistral_basic_prompt(self):
         """Test basic Mistral prompt with real API."""
-        client = create_ai_client('mistral', api_key=os.getenv('MISTRAL_API_KEY'))
-        response, duration = client.prompt('mistral-small-latest', SIMPLE_PROMPT)
+        client = create_ai_client("mistral", api_key=os.getenv("MISTRAL_API_KEY"))
+        response, duration = client.prompt("mistral-small-latest", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -159,13 +162,13 @@ class TestDeepSeekIntegration:
     @pytest.fixture(autouse=True)
     def skip_if_no_api_key(self):
         """Skip test if API key not set."""
-        if not os.getenv('DEEPSEEK_API_KEY'):
+        if not os.getenv("DEEPSEEK_API_KEY"):
             pytest.skip("DEEPSEEK_API_KEY not set")
 
     def test_deepseek_basic_prompt(self):
         """Test basic DeepSeek prompt with real API."""
-        client = create_ai_client('deepseek', api_key=os.getenv('DEEPSEEK_API_KEY'))
-        response, duration = client.prompt('deepseek-chat', SIMPLE_PROMPT)
+        client = create_ai_client("deepseek", api_key=os.getenv("DEEPSEEK_API_KEY"))
+        response, duration = client.prompt("deepseek-chat", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -192,13 +195,13 @@ class TestQwenIntegration:
     @pytest.fixture(autouse=True)
     def skip_if_no_api_key(self):
         """Skip test if API key not set."""
-        if not os.getenv('QWEN_API_KEY'):
+        if not os.getenv("QWEN_API_KEY"):
             pytest.skip("QWEN_API_KEY not set")
 
     def test_qwen_basic_prompt(self):
         """Test basic Qwen prompt with real API."""
-        client = create_ai_client('qwen', api_key=os.getenv('QWEN_API_KEY'))
-        response, duration = client.prompt('qwen-turbo', SIMPLE_PROMPT)
+        client = create_ai_client("qwen", api_key=os.getenv("QWEN_API_KEY"))
+        response, duration = client.prompt("qwen-turbo", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -225,18 +228,18 @@ class TestOpenRouterIntegration:
     @pytest.fixture(autouse=True)
     def skip_if_no_api_key(self):
         """Skip test if API key not set."""
-        if not os.getenv('OPENROUTER_API_KEY'):
+        if not os.getenv("OPENROUTER_API_KEY"):
             pytest.skip("OPENROUTER_API_KEY not set")
 
     def test_openrouter_basic_prompt(self):
         """Test basic OpenRouter prompt with real API."""
         client = create_ai_client(
-            'openrouter',
-            api_key=os.getenv('OPENROUTER_API_KEY'),
-            base_url='https://openrouter.ai/api/v1'
+            "openrouter",
+            api_key=os.getenv("OPENROUTER_API_KEY"),
+            base_url="https://openrouter.ai/api/v1",
         )
         # Use a cheap model available on OpenRouter
-        response, duration = client.prompt('openai/gpt-3.5-turbo', SIMPLE_PROMPT)
+        response, duration = client.prompt("openai/gpt-3.5-turbo", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -262,19 +265,17 @@ class TestSciCOREIntegration:
     @pytest.fixture(autouse=True)
     def skip_if_no_api_key(self):
         """Skip test if API key not set."""
-        if not os.getenv('SCICORE_API_KEY'):
+        if not os.getenv("SCICORE_API_KEY"):
             pytest.skip("SCICORE_API_KEY not set")
 
     def test_scicore_basic_prompt(self):
         """Test basic sciCORE prompt with real API."""
         # Note: Update base_url and model according to your sciCORE setup
-        base_url = os.getenv('SCICORE_BASE_URL', 'https://api.scicore.unibas.ch/v1')
-        model = os.getenv('SCICORE_MODEL', 'gpt-4')
+        base_url = os.getenv("SCICORE_BASE_URL", "https://api.scicore.unibas.ch/v1")
+        model = os.getenv("SCICORE_MODEL", "gpt-4")
 
         client = create_ai_client(
-            'scicore',
-            api_key=os.getenv('SCICORE_API_KEY'),
-            base_url=base_url
+            "scicore", api_key=os.getenv("SCICORE_API_KEY"), base_url=base_url
         )
         response, duration = client.prompt(model, SIMPLE_PROMPT)
 
@@ -317,18 +318,22 @@ class TestProviderParity:
         providers_to_test = []
 
         # Check which providers have API keys set
-        if os.getenv('OPENAI_API_KEY'):
-            providers_to_test.append(('openai', 'gpt-4o-mini', os.getenv('OPENAI_API_KEY')))
-        if os.getenv('ANTHROPIC_API_KEY'):
-            providers_to_test.append(('anthropic', 'claude-3-5-haiku-20241022', os.getenv('ANTHROPIC_API_KEY')))
-        if os.getenv('GOOGLE_API_KEY'):
-            providers_to_test.append(('genai', 'gemini-2.0-flash-exp', os.getenv('GOOGLE_API_KEY')))
-        if os.getenv('MISTRAL_API_KEY'):
-            providers_to_test.append(('mistral', 'mistral-small-latest', os.getenv('MISTRAL_API_KEY')))
-        if os.getenv('DEEPSEEK_API_KEY'):
-            providers_to_test.append(('deepseek', 'deepseek-chat', os.getenv('DEEPSEEK_API_KEY')))
-        if os.getenv('QWEN_API_KEY'):
-            providers_to_test.append(('qwen', 'qwen-turbo', os.getenv('QWEN_API_KEY')))
+        if os.getenv("OPENAI_API_KEY"):
+            providers_to_test.append(("openai", "gpt-4o-mini", os.getenv("OPENAI_API_KEY")))
+        if os.getenv("ANTHROPIC_API_KEY"):
+            providers_to_test.append(
+                ("anthropic", "claude-3-5-haiku-20241022", os.getenv("ANTHROPIC_API_KEY"))
+            )
+        if os.getenv("GOOGLE_API_KEY"):
+            providers_to_test.append(("genai", "gemini-2.0-flash-exp", os.getenv("GOOGLE_API_KEY")))
+        if os.getenv("MISTRAL_API_KEY"):
+            providers_to_test.append(
+                ("mistral", "mistral-small-latest", os.getenv("MISTRAL_API_KEY"))
+            )
+        if os.getenv("DEEPSEEK_API_KEY"):
+            providers_to_test.append(("deepseek", "deepseek-chat", os.getenv("DEEPSEEK_API_KEY")))
+        if os.getenv("QWEN_API_KEY"):
+            providers_to_test.append(("qwen", "qwen-turbo", os.getenv("QWEN_API_KEY")))
 
         if not providers_to_test:
             pytest.skip("No API keys configured")
@@ -338,18 +343,20 @@ class TestProviderParity:
         for provider_id, model, api_key in providers_to_test:
             client = create_ai_client(provider_id, api_key=api_key)
             response, duration = client.prompt(model, "Reply with just: OK")
-            results.append({
-                'provider': provider_id,
-                'success': response.text != "",
-                'duration': duration,
-                'tokens': response.usage.total_tokens
-            })
+            results.append(
+                {
+                    "provider": provider_id,
+                    "success": response.text != "",
+                    "duration": duration,
+                    "tokens": response.usage.total_tokens,
+                }
+            )
 
         # Verify all succeeded
-        assert all(r['success'] for r in results), f"Some providers failed: {results}"
+        assert all(r["success"] for r in results), f"Some providers failed: {results}"
 
         # Verify all responses had reasonable timing
-        assert all(r['duration'] > 0 for r in results)
+        assert all(r["duration"] > 0 for r in results)
 
         print(f"\nTested {len(results)} providers successfully:")
         for r in results:

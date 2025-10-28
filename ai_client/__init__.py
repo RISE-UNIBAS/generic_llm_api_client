@@ -22,6 +22,7 @@ Technical implementation details:
 - Qwen: OpenAI-compatible API with custom base URL
 - OpenRouter/sciCORE: Use OpenAI client with custom base URLs
 """
+
 from .base_client import BaseAIClient, create_ai_client
 from .openai_client import OpenAIClient
 from .gemini_client import GeminiClient
@@ -35,35 +36,31 @@ from .utils import (
     is_rate_limit_error,
     detect_image_mime_type,
     RateLimitError,
-    APIError
+    APIError,
 )
 
 __version__ = "0.1.0"
 
 __all__ = [
     # Core classes
-    'BaseAIClient',
-    'create_ai_client',
-
+    "BaseAIClient",
+    "create_ai_client",
     # Provider-specific clients
-    'OpenAIClient',
-    'GeminiClient',
-    'ClaudeClient',
-    'MistralClient',
-    'DeepSeekClient',
-    'QwenClient',
-
+    "OpenAIClient",
+    "GeminiClient",
+    "ClaudeClient",
+    "MistralClient",
+    "DeepSeekClient",
+    "QwenClient",
     # Response and utility classes
-    'LLMResponse',
-    'Usage',
-
+    "LLMResponse",
+    "Usage",
     # Utility functions and exceptions
-    'retry_with_exponential_backoff',
-    'is_rate_limit_error',
-    'detect_image_mime_type',
-    'RateLimitError',
-    'APIError',
-
+    "retry_with_exponential_backoff",
+    "is_rate_limit_error",
+    "detect_image_mime_type",
+    "RateLimitError",
+    "APIError",
     # Version
-    '__version__'
+    "__version__",
 ]

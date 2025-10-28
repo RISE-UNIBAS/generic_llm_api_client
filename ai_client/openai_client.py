@@ -7,6 +7,7 @@ multimodal content (text + images).
 
 Also used for OpenAI-compatible APIs like OpenRouter and sciCORE.
 """
+
 import base64
 import json
 import logging
@@ -42,23 +43,20 @@ class OpenAIClient(BaseAIClient):
 
     def _init_client(self):
         """Initialize the OpenAI client with the provided API key and optional base URL."""
-        kwargs = {'api_key': self.api_key}
+        kwargs = {"api_key": self.api_key}
 
         # Support custom base URLs (for OpenRouter, sciCORE, etc.)
         if self.base_url:
-            kwargs['base_url'] = self.base_url
+            kwargs["base_url"] = self.base_url
 
         # Add custom headers if provided
-        if 'default_headers' in self.settings:
-            kwargs['default_headers'] = self.settings['default_headers']
+        if "default_headers" in self.settings:
+            kwargs["default_headers"] = self.settings["default_headers"]
 
         self.api_client = OpenAI(**kwargs)
 
     def _prepare_message_with_images(
-        self,
-        prompt: str,
-        images: List[str],
-        system_prompt: str
+        self, prompt: str, images: List[str], system_prompt: str
     ) -> List[dict]:
         """
         Prepare an OpenAI message object with text and images.
@@ -78,10 +76,7 @@ class OpenAIClient(BaseAIClient):
         for resource in images:
             if self.is_url(resource):
                 # For URLs, directly use the URL in the prompt
-                user_content.append({
-                    "type": "image_url",
-                    "image_url": {"url": resource}
-                })
+                user_content.append({"type": "image_url", "image_url": {"url": resource}})
             else:
                 # For local files, read and encode as base64
                 try:
@@ -91,19 +86,22 @@ class OpenAIClient(BaseAIClient):
 
                     # Detect MIME type from file extension
                     from .utils import detect_image_mime_type
+
                     mime_type = detect_image_mime_type(resource)
 
-                    user_content.append({
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}
-                    })
+                    user_content.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime_type};base64,{base64_image}"},
+                        }
+                    )
                 except Exception as e:
                     logger.error(f"Error reading image file {resource}: {e}")
 
         # Return the complete message structure
         return [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content}
+            {"role": "user", "content": user_content},
         ]
 
     def _do_prompt(
@@ -113,7 +111,7 @@ class OpenAIClient(BaseAIClient):
         images: List[str],
         system_prompt: str,
         response_format: Optional[Any],
-        **kwargs
+        **kwargs,
     ) -> LLMResponse:
         """
         Send a prompt to the OpenAI model and get the response.
@@ -134,15 +132,20 @@ class OpenAIClient(BaseAIClient):
 
         # Extract OpenAI-specific parameters from settings and kwargs
         params = {
-            'model': model,
-            'messages': messages,
-            'temperature': kwargs.get('temperature', self.settings.get('temperature', 0.5)),
+            "model": model,
+            "messages": messages,
+            "temperature": kwargs.get("temperature", self.settings.get("temperature", 0.5)),
         }
 
         # Add optional parameters if specified
         optional_params = [
-            'max_tokens', 'top_p', 'frequency_penalty',
-            'presence_penalty', 'seed', 'n', 'stop'
+            "max_tokens",
+            "top_p",
+            "frequency_penalty",
+            "presence_penalty",
+            "seed",
+            "n",
+            "stop",
         ]
         for param in optional_params:
             value = kwargs.get(param, self.settings.get(param))
@@ -152,10 +155,10 @@ class OpenAIClient(BaseAIClient):
         # Handle structured output
         if response_format:
             # Check if it's a Pydantic model
-            if hasattr(response_format, 'model_json_schema'):
+            if hasattr(response_format, "model_json_schema"):
                 # Use beta.chat.completions.parse for structured output
                 try:
-                    params['response_format'] = response_format
+                    params["response_format"] = response_format
                     raw_response = self.api_client.beta.chat.completions.parse(**params)
                     return self._create_response_from_parsed(raw_response, model)
                 except Exception as e:
@@ -163,10 +166,10 @@ class OpenAIClient(BaseAIClient):
                     # Fall through to JSON object mode
 
             # Fallback to JSON object mode
-            params['response_format'] = {"type": "json_object"}
-            if hasattr(response_format, 'model_json_schema'):
+            params["response_format"] = {"type": "json_object"}
+            if hasattr(response_format, "model_json_schema"):
                 schema_prompt = f"\n\nYou MUST respond with valid JSON matching this exact schema: {json.dumps(response_format.model_json_schema())}"
-                params['messages'][0]['content'] += schema_prompt
+                params["messages"][0]["content"] += schema_prompt
 
         # Send the request to OpenAI
         raw_response = self.api_client.chat.completions.create(**params)
@@ -187,17 +190,17 @@ class OpenAIClient(BaseAIClient):
         choice = raw_response.choices[0]
 
         # For structured output, the parsed object is in message.parsed
-        if hasattr(choice.message, 'parsed') and choice.message.parsed:
+        if hasattr(choice.message, "parsed") and choice.message.parsed:
             text = choice.message.parsed.model_dump_json()
         else:
             text = choice.message.content or ""
 
         usage = Usage()
-        if hasattr(raw_response, 'usage') and raw_response.usage:
+        if hasattr(raw_response, "usage") and raw_response.usage:
             usage = Usage(
                 input_tokens=raw_response.usage.prompt_tokens,
                 output_tokens=raw_response.usage.completion_tokens,
-                total_tokens=raw_response.usage.total_tokens
+                total_tokens=raw_response.usage.total_tokens,
             )
 
         return LLMResponse(
@@ -206,14 +209,11 @@ class OpenAIClient(BaseAIClient):
             provider=self.PROVIDER_ID,
             finish_reason=choice.finish_reason or "unknown",
             usage=usage,
-            raw_response=raw_response
+            raw_response=raw_response,
         )
 
     def _create_response_from_raw(
-        self,
-        raw_response: Any,
-        model: str,
-        response_format: Optional[Any]
+        self, raw_response: Any, model: str, response_format: Optional[Any]
     ) -> LLMResponse:
         """
         Create LLMResponse from OpenAI raw response.
@@ -230,18 +230,20 @@ class OpenAIClient(BaseAIClient):
         text = choice.message.content or ""
 
         # If response_format was provided and response is JSON, try to parse it
-        if response_format and hasattr(response_format, 'model_json_schema'):
+        if response_format and hasattr(response_format, "model_json_schema"):
             try:
                 # Try to extract JSON if wrapped in markdown
                 content = text
                 if "```json" in content:
                     import re
-                    json_match = re.search(r'```json\s*([\s\S]*?)\s*```', content)
+
+                    json_match = re.search(r"```json\s*([\s\S]*?)\s*```", content)
                     if json_match:
                         content = json_match.group(1)
                 elif "```" in content:
                     import re
-                    json_match = re.search(r'```\s*([\s\S]*?)\s*```', content)
+
+                    json_match = re.search(r"```\s*([\s\S]*?)\s*```", content)
                     if json_match:
                         content = json_match.group(1)
 
@@ -254,16 +256,16 @@ class OpenAIClient(BaseAIClient):
                 # Keep original text
 
         usage = Usage()
-        if hasattr(raw_response, 'usage') and raw_response.usage:
+        if hasattr(raw_response, "usage") and raw_response.usage:
             usage = Usage(
                 input_tokens=raw_response.usage.prompt_tokens,
                 output_tokens=raw_response.usage.completion_tokens,
-                total_tokens=raw_response.usage.total_tokens
+                total_tokens=raw_response.usage.total_tokens,
             )
             # OpenRouter may include cost information
-            if hasattr(raw_response.usage, 'cost'):
+            if hasattr(raw_response.usage, "cost"):
                 usage.estimated_cost_usd = raw_response.usage.cost
-            if hasattr(raw_response.usage, 'cached_tokens'):
+            if hasattr(raw_response.usage, "cached_tokens"):
                 usage.cached_tokens = raw_response.usage.cached_tokens
 
         return LLMResponse(
@@ -272,7 +274,7 @@ class OpenAIClient(BaseAIClient):
             provider=self.PROVIDER_ID,
             finish_reason=choice.finish_reason or "unknown",
             usage=usage,
-            raw_response=raw_response
+            raw_response=raw_response,
         )
 
     def get_model_list(self) -> List[Tuple[str, Optional[str]]]:
@@ -283,13 +285,15 @@ class OpenAIClient(BaseAIClient):
             List of tuples (model_id, created_date)
         """
         if self.api_client is None:
-            raise ValueError('OpenAI client is not initialized.')
+            raise ValueError("OpenAI client is not initialized.")
 
         raw_list = self.api_client.models.list()
         model_list = []
 
         for model in raw_list:
-            readable_date = datetime.fromtimestamp(model.created, tz=timezone.utc).strftime('%Y-%m-%d')
+            readable_date = datetime.fromtimestamp(model.created, tz=timezone.utc).strftime(
+                "%Y-%m-%d"
+            )
             model_list.append((model.id, readable_date))
 
         return model_list

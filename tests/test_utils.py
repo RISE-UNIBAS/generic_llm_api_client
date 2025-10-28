@@ -1,6 +1,7 @@
 """
 Tests for utility functions.
 """
+
 import pytest
 import time
 from ai_client.utils import (
@@ -8,7 +9,7 @@ from ai_client.utils import (
     is_rate_limit_error,
     get_retry_delay_from_error,
     RateLimitError,
-    APIError
+    APIError,
 )
 
 
@@ -53,10 +54,7 @@ class TestRetryWithExponentialBackoff:
             call_count.append(1)
             raise ValueError("Always fails")
 
-        wrapped = retry_with_exponential_backoff(
-            always_failing,
-            max_retries=2
-        )
+        wrapped = retry_with_exponential_backoff(always_failing, max_retries=2)
 
         with pytest.raises(ValueError, match="Always fails"):
             wrapped()
@@ -75,10 +73,7 @@ class TestRetryWithExponentialBackoff:
             return "done"
 
         wrapped = retry_with_exponential_backoff(
-            failing_func,
-            max_retries=2,
-            initial_delay=0.1,
-            exponential_base=2.0
+            failing_func, max_retries=2, initial_delay=0.1, exponential_base=2.0
         )
 
         wrapped()
@@ -108,7 +103,7 @@ class TestRetryWithExponentialBackoff:
             func_with_specific_error,
             max_retries=3,
             retryable_exceptions=(ValueError,),
-            initial_delay=0.01
+            initial_delay=0.01,
         )
 
         # Should retry ValueError but fail on TypeError
@@ -129,7 +124,7 @@ class TestIsRateLimitError:
             "Too many requests",
             "429 error",
             "Quota exceeded",
-            "resource_exhausted"
+            "resource_exhausted",
         ]
 
         for msg in rate_limit_messages:
@@ -142,7 +137,7 @@ class TestIsRateLimitError:
             "Connection error",
             "Invalid API key",
             "Model not found",
-            "Internal server error"
+            "Internal server error",
         ]
 
         for msg in other_messages:

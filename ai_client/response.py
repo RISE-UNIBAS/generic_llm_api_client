@@ -5,6 +5,7 @@ This module defines the response structures returned by all provider implementat
 ensuring consistent access to usage metrics, timing, and raw responses for research
 and benchmarking purposes.
 """
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
@@ -23,14 +24,14 @@ class Usage:
     def to_dict(self) -> dict:
         """Convert to dictionary format."""
         result = {
-            'input_tokens': self.input_tokens,
-            'output_tokens': self.output_tokens,
-            'total_tokens': self.total_tokens,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_tokens": self.total_tokens,
         }
         if self.cached_tokens is not None:
-            result['cached_tokens'] = self.cached_tokens
+            result["cached_tokens"] = self.cached_tokens
         if self.estimated_cost_usd is not None:
-            result['estimated_cost_usd'] = self.estimated_cost_usd
+            result["estimated_cost_usd"] = self.estimated_cost_usd
         return result
 
 
@@ -70,13 +71,17 @@ class LLMResponse:
         Access it directly when needed for detailed analysis.
         """
         return {
-            'text': self.text,
-            'model': self.model,
-            'provider': self.provider,
-            'finish_reason': self.finish_reason,
-            'usage': self.usage.to_dict(),
-            'duration': self.duration,
-            'timestamp': self.timestamp.isoformat() if isinstance(self.timestamp, datetime) else self.timestamp
+            "text": self.text,
+            "model": self.model,
+            "provider": self.provider,
+            "finish_reason": self.finish_reason,
+            "usage": self.usage.to_dict(),
+            "duration": self.duration,
+            "timestamp": (
+                self.timestamp.isoformat()
+                if isinstance(self.timestamp, datetime)
+                else self.timestamp
+            ),
         }
 
     def __str__(self) -> str:

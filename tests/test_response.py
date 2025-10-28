@@ -1,6 +1,7 @@
 """
 Tests for response dataclasses (LLMResponse, Usage).
 """
+
 import pytest
 from datetime import datetime
 from ai_client.response import Usage, LLMResponse
@@ -26,7 +27,7 @@ class TestUsage:
             output_tokens=50,
             total_tokens=150,
             cached_tokens=20,
-            estimated_cost_usd=0.015
+            estimated_cost_usd=0.015,
         )
 
         assert usage.cached_tokens == 20
@@ -39,16 +40,16 @@ class TestUsage:
             output_tokens=50,
             total_tokens=150,
             cached_tokens=20,
-            estimated_cost_usd=0.015
+            estimated_cost_usd=0.015,
         )
 
         result = usage.to_dict()
 
-        assert result['input_tokens'] == 100
-        assert result['output_tokens'] == 50
-        assert result['total_tokens'] == 150
-        assert result['cached_tokens'] == 20
-        assert result['estimated_cost_usd'] == 0.015
+        assert result["input_tokens"] == 100
+        assert result["output_tokens"] == 50
+        assert result["total_tokens"] == 150
+        assert result["cached_tokens"] == 20
+        assert result["estimated_cost_usd"] == 0.015
 
     def test_usage_to_dict_without_optional(self):
         """Test Usage.to_dict() without optional fields."""
@@ -56,11 +57,11 @@ class TestUsage:
 
         result = usage.to_dict()
 
-        assert result['input_tokens'] == 100
-        assert result['output_tokens'] == 50
-        assert result['total_tokens'] == 150
-        assert 'cached_tokens' not in result
-        assert 'estimated_cost_usd' not in result
+        assert result["input_tokens"] == 100
+        assert result["output_tokens"] == 50
+        assert result["total_tokens"] == 150
+        assert "cached_tokens" not in result
+        assert "estimated_cost_usd" not in result
 
 
 class TestLLMResponse:
@@ -76,7 +77,7 @@ class TestLLMResponse:
             finish_reason="stop",
             usage=usage,
             raw_response={"test": "data"},
-            duration=1.5
+            duration=1.5,
         )
 
         assert response.text == "Hello world"
@@ -98,7 +99,7 @@ class TestLLMResponse:
             finish_reason="stop",
             usage=usage,
             raw_response={},
-            duration=1.5
+            duration=1.5,
         )
 
         assert str(response) == "Hello world"
@@ -113,24 +114,24 @@ class TestLLMResponse:
             finish_reason="stop",
             usage=usage,
             raw_response={"test": "data"},
-            duration=1.5
+            duration=1.5,
         )
 
         result = response.to_dict()
 
-        assert result['text'] == "Hello world"
-        assert result['model'] == "gpt-4"
-        assert result['provider'] == "openai"
-        assert result['finish_reason'] == "stop"
-        assert result['duration'] == 1.5
-        assert 'usage' in result
-        assert result['usage']['input_tokens'] == 10
-        assert result['usage']['output_tokens'] == 20
-        assert result['usage']['total_tokens'] == 30
+        assert result["text"] == "Hello world"
+        assert result["model"] == "gpt-4"
+        assert result["provider"] == "openai"
+        assert result["finish_reason"] == "stop"
+        assert result["duration"] == 1.5
+        assert "usage" in result
+        assert result["usage"]["input_tokens"] == 10
+        assert result["usage"]["output_tokens"] == 20
+        assert result["usage"]["total_tokens"] == 30
         # raw_response should not be in dict (not JSON serializable)
-        assert 'raw_response' not in result
+        assert "raw_response" not in result
         # timestamp should be ISO format string
-        assert isinstance(result['timestamp'], str)
+        assert isinstance(result["timestamp"], str)
 
     def test_llm_response_custom_timestamp(self):
         """Test LLMResponse with custom timestamp."""
@@ -144,7 +145,7 @@ class TestLLMResponse:
             usage=usage,
             raw_response={},
             duration=1.0,
-            timestamp=custom_time
+            timestamp=custom_time,
         )
 
         assert response.timestamp == custom_time

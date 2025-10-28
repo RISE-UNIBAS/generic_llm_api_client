@@ -1,6 +1,7 @@
 """
 Tests for OpenAI client implementation.
 """
+
 import pytest
 import json
 from unittest.mock import Mock, patch, MagicMock
@@ -13,37 +14,34 @@ class TestOpenAIClient:
 
     def test_openai_client_initialization(self):
         """Test OpenAI client initialization."""
-        with patch('ai_client.openai_client.OpenAI') as mock_openai:
-            client = create_ai_client('openai', api_key='test-key')
+        with patch("ai_client.openai_client.OpenAI") as mock_openai:
+            client = create_ai_client("openai", api_key="test-key")
 
             assert isinstance(client, OpenAIClient)
-            assert client.PROVIDER_ID == 'openai'
+            assert client.PROVIDER_ID == "openai"
             assert client.SUPPORTS_MULTIMODAL is True
-            mock_openai.assert_called_once_with(api_key='test-key')
+            mock_openai.assert_called_once_with(api_key="test-key")
 
     def test_openai_client_with_base_url(self):
         """Test OpenAI client with custom base URL."""
-        with patch('ai_client.openai_client.OpenAI') as mock_openai:
+        with patch("ai_client.openai_client.OpenAI") as mock_openai:
             client = create_ai_client(
-                'openai',
-                api_key='test-key',
-                base_url='https://custom.api.com'
+                "openai", api_key="test-key", base_url="https://custom.api.com"
             )
 
             mock_openai.assert_called_once_with(
-                api_key='test-key',
-                base_url='https://custom.api.com'
+                api_key="test-key", base_url="https://custom.api.com"
             )
 
     def test_prompt_text_only(self, mock_openai_response):
         """Test text-only prompt."""
-        with patch('ai_client.openai_client.OpenAI') as mock_openai_class:
+        with patch("ai_client.openai_client.OpenAI") as mock_openai_class:
             mock_client = Mock()
             mock_openai_class.return_value = mock_client
             mock_client.chat.completions.create.return_value = mock_openai_response
 
-            client = create_ai_client('openai', api_key='test-key')
-            response, duration = client.prompt('gpt-4', 'Hello!')
+            client = create_ai_client("openai", api_key="test-key")
+            response, duration = client.prompt("gpt-4", "Hello!")
 
             # Check response
             assert isinstance(response, LLMResponse)
@@ -59,52 +57,46 @@ class TestOpenAIClient:
             # Check API call
             mock_client.chat.completions.create.assert_called_once()
             call_args = mock_client.chat.completions.create.call_args
-            assert call_args.kwargs['model'] == 'gpt-4'
-            assert len(call_args.kwargs['messages']) == 2  # system + user
+            assert call_args.kwargs["model"] == "gpt-4"
+            assert len(call_args.kwargs["messages"]) == 2  # system + user
 
     def test_prompt_with_images(self, mock_openai_response, sample_image_path):
         """Test prompt with images."""
-        with patch('ai_client.openai_client.OpenAI') as mock_openai_class:
+        with patch("ai_client.openai_client.OpenAI") as mock_openai_class:
             mock_client = Mock()
             mock_openai_class.return_value = mock_client
             mock_client.chat.completions.create.return_value = mock_openai_response
 
-            client = create_ai_client('openai', api_key='test-key')
+            client = create_ai_client("openai", api_key="test-key")
             response, duration = client.prompt(
-                'gpt-4o',
-                'Describe this image',
-                images=[sample_image_path]
+                "gpt-4o", "Describe this image", images=[sample_image_path]
             )
 
             assert isinstance(response, LLMResponse)
 
             # Check that images were included in the API call
             call_args = mock_client.chat.completions.create.call_args
-            messages = call_args.kwargs['messages']
+            messages = call_args.kwargs["messages"]
             user_message = messages[1]  # Second message is user
-            assert isinstance(user_message['content'], list)
-            assert any(item['type'] == 'image_url' for item in user_message['content'])
+            assert isinstance(user_message["content"], list)
+            assert any(item["type"] == "image_url" for item in user_message["content"])
 
     def test_prompt_with_custom_temperature(self, mock_openai_response):
         """Test prompt with custom temperature."""
-        with patch('ai_client.openai_client.OpenAI') as mock_openai_class:
+        with patch("ai_client.openai_client.OpenAI") as mock_openai_class:
             mock_client = Mock()
             mock_openai_class.return_value = mock_client
             mock_client.chat.completions.create.return_value = mock_openai_response
 
-            client = create_ai_client('openai', api_key='test-key')
-            response, duration = client.prompt(
-                'gpt-4',
-                'Hello',
-                temperature=0.9
-            )
+            client = create_ai_client("openai", api_key="test-key")
+            response, duration = client.prompt("gpt-4", "Hello", temperature=0.9)
 
             call_args = mock_client.chat.completions.create.call_args
-            assert call_args.kwargs['temperature'] == 0.9
+            assert call_args.kwargs["temperature"] == 0.9
 
     def test_prompt_with_structured_output(self, mock_pydantic_model):
         """Test prompt with structured output (Pydantic model)."""
-        with patch('ai_client.openai_client.OpenAI') as mock_openai_class:
+        with patch("ai_client.openai_client.OpenAI") as mock_openai_class:
             mock_client = Mock()
             mock_openai_class.return_value = mock_client
 
@@ -122,11 +114,9 @@ class TestOpenAIClient:
 
             mock_client.beta.chat.completions.parse.return_value = mock_response
 
-            client = create_ai_client('openai', api_key='test-key')
+            client = create_ai_client("openai", api_key="test-key")
             response, duration = client.prompt(
-                'gpt-4',
-                'Extract data',
-                response_format=mock_pydantic_model
+                "gpt-4", "Extract data", response_format=mock_pydantic_model
             )
 
             # Check that structured output was used
@@ -135,18 +125,18 @@ class TestOpenAIClient:
             # Check response contains JSON
             assert isinstance(response, LLMResponse)
             data = json.loads(response.text)
-            assert data['name'] == "test"
-            assert data['value'] == 42
+            assert data["name"] == "test"
+            assert data["value"] == 42
 
     def test_error_response_on_exception(self):
         """Test that errors are handled gracefully."""
-        with patch('ai_client.openai_client.OpenAI') as mock_openai_class:
+        with patch("ai_client.openai_client.OpenAI") as mock_openai_class:
             mock_client = Mock()
             mock_openai_class.return_value = mock_client
             mock_client.chat.completions.create.side_effect = Exception("API Error")
 
-            client = create_ai_client('openai', api_key='test-key')
-            response, duration = client.prompt('gpt-4', 'Hello')
+            client = create_ai_client("openai", api_key="test-key")
+            response, duration = client.prompt("gpt-4", "Hello")
 
             # Should return error response, not raise
             assert isinstance(response, LLMResponse)
@@ -156,7 +146,7 @@ class TestOpenAIClient:
 
     def test_get_model_list(self):
         """Test get_model_list method."""
-        with patch('ai_client.openai_client.OpenAI') as mock_openai_class:
+        with patch("ai_client.openai_client.OpenAI") as mock_openai_class:
             mock_client = Mock()
             mock_openai_class.return_value = mock_client
 
@@ -171,7 +161,7 @@ class TestOpenAIClient:
 
             mock_client.models.list.return_value = [mock_model1, mock_model2]
 
-            client = create_ai_client('openai', api_key='test-key')
+            client = create_ai_client("openai", api_key="test-key")
             models = client.get_model_list()
 
             assert len(models) == 2

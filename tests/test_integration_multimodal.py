@@ -6,6 +6,7 @@ Run with: pytest -m integration tests/test_integration_multimodal.py
 
 Set API keys in .env file (see .env.example for template).
 """
+
 import os
 import pytest
 from dotenv import load_dotenv
@@ -26,17 +27,13 @@ class TestOpenAIVision:
     @pytest.fixture(autouse=True)
     def skip_if_no_api_key(self):
         """Skip test if API key not set."""
-        if not os.getenv('OPENAI_API_KEY'):
+        if not os.getenv("OPENAI_API_KEY"):
             pytest.skip("OPENAI_API_KEY not set")
 
     def test_openai_vision_with_image(self, sample_image_path):
         """Test OpenAI vision model with image."""
-        client = create_ai_client('openai', api_key=os.getenv('OPENAI_API_KEY'))
-        response, duration = client.prompt(
-            'gpt-4o-mini',
-            VISION_PROMPT,
-            images=[sample_image_path]
-        )
+        client = create_ai_client("openai", api_key=os.getenv("OPENAI_API_KEY"))
+        response, duration = client.prompt("gpt-4o-mini", VISION_PROMPT, images=[sample_image_path])
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -61,16 +58,14 @@ class TestClaudeVision:
     @pytest.fixture(autouse=True)
     def skip_if_no_api_key(self):
         """Skip test if API key not set."""
-        if not os.getenv('ANTHROPIC_API_KEY'):
+        if not os.getenv("ANTHROPIC_API_KEY"):
             pytest.skip("ANTHROPIC_API_KEY not set")
 
     def test_claude_vision_with_image(self, sample_image_path):
         """Test Claude vision model with image."""
-        client = create_ai_client('anthropic', api_key=os.getenv('ANTHROPIC_API_KEY'))
+        client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
         response, duration = client.prompt(
-            'claude-3-5-sonnet-20241022',
-            VISION_PROMPT,
-            images=[sample_image_path]
+            "claude-3-5-sonnet-20241022", VISION_PROMPT, images=[sample_image_path]
         )
 
         # Verify response structure
@@ -96,16 +91,14 @@ class TestGeminiVision:
     @pytest.fixture(autouse=True)
     def skip_if_no_api_key(self):
         """Skip test if API key not set."""
-        if not os.getenv('GOOGLE_API_KEY'):
+        if not os.getenv("GOOGLE_API_KEY"):
             pytest.skip("GOOGLE_API_KEY not set")
 
     def test_gemini_vision_with_image(self, sample_image_path):
         """Test Gemini vision model with image."""
-        client = create_ai_client('genai', api_key=os.getenv('GOOGLE_API_KEY'))
+        client = create_ai_client("genai", api_key=os.getenv("GOOGLE_API_KEY"))
         response, duration = client.prompt(
-            'gemini-2.0-flash-exp',
-            VISION_PROMPT,
-            images=[sample_image_path]
+            "gemini-2.0-flash-exp", VISION_PROMPT, images=[sample_image_path]
         )
 
         # Verify response structure
@@ -126,16 +119,14 @@ class TestMistralVision:
     @pytest.fixture(autouse=True)
     def skip_if_no_api_key(self):
         """Skip test if API key not set."""
-        if not os.getenv('MISTRAL_API_KEY'):
+        if not os.getenv("MISTRAL_API_KEY"):
             pytest.skip("MISTRAL_API_KEY not set")
 
     def test_mistral_vision_with_image(self, sample_image_path):
         """Test Mistral vision model with image."""
-        client = create_ai_client('mistral', api_key=os.getenv('MISTRAL_API_KEY'))
+        client = create_ai_client("mistral", api_key=os.getenv("MISTRAL_API_KEY"))
         response, duration = client.prompt(
-            'pixtral-12b-2409',
-            VISION_PROMPT,
-            images=[sample_image_path]
+            "pixtral-12b-2409", VISION_PROMPT, images=[sample_image_path]
         )
 
         # Verify response structure
@@ -161,19 +152,17 @@ class TestDeepSeekVision:
     @pytest.fixture(autouse=True)
     def skip_if_no_api_key(self):
         """Skip test if API key not set."""
-        if not os.getenv('DEEPSEEK_API_KEY'):
+        if not os.getenv("DEEPSEEK_API_KEY"):
             pytest.skip("DEEPSEEK_API_KEY not set")
 
     def test_deepseek_vision_with_image(self, sample_image_path):
         """Test DeepSeek vision model with image."""
-        client = create_ai_client('deepseek', api_key=os.getenv('DEEPSEEK_API_KEY'))
+        client = create_ai_client("deepseek", api_key=os.getenv("DEEPSEEK_API_KEY"))
 
         # Note: Check if DeepSeek has vision models available
         # Using deepseek-chat as it may support vision
         response, duration = client.prompt(
-            'deepseek-chat',
-            VISION_PROMPT,
-            images=[sample_image_path]
+            "deepseek-chat", VISION_PROMPT, images=[sample_image_path]
         )
 
         # Verify response structure
@@ -194,19 +183,15 @@ class TestQwenVision:
     @pytest.fixture(autouse=True)
     def skip_if_no_api_key(self):
         """Skip test if API key not set."""
-        if not os.getenv('QWEN_API_KEY'):
+        if not os.getenv("QWEN_API_KEY"):
             pytest.skip("QWEN_API_KEY not set")
 
     def test_qwen_vision_with_image(self, sample_image_path):
         """Test Qwen vision model with image."""
-        client = create_ai_client('qwen', api_key=os.getenv('QWEN_API_KEY'))
+        client = create_ai_client("qwen", api_key=os.getenv("QWEN_API_KEY"))
 
         # Qwen has vision-language models
-        response, duration = client.prompt(
-            'qwen-vl-max',
-            VISION_PROMPT,
-            images=[sample_image_path]
-        )
+        response, duration = client.prompt("qwen-vl-max", VISION_PROMPT, images=[sample_image_path])
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -226,25 +211,27 @@ class TestMultiImageSupport:
     @pytest.fixture(autouse=True)
     def skip_if_no_api_key(self):
         """Skip test if no API keys are set."""
-        if not any([
-            os.getenv('OPENAI_API_KEY'),
-            os.getenv('ANTHROPIC_API_KEY'),
-            os.getenv('GOOGLE_API_KEY')
-        ]):
+        if not any(
+            [
+                os.getenv("OPENAI_API_KEY"),
+                os.getenv("ANTHROPIC_API_KEY"),
+                os.getenv("GOOGLE_API_KEY"),
+            ]
+        ):
             pytest.skip("No vision-capable API keys set")
 
     def test_multiple_images_openai(self, sample_image_path):
         """Test OpenAI with multiple images."""
-        if not os.getenv('OPENAI_API_KEY'):
+        if not os.getenv("OPENAI_API_KEY"):
             pytest.skip("OPENAI_API_KEY not set")
 
-        client = create_ai_client('openai', api_key=os.getenv('OPENAI_API_KEY'))
+        client = create_ai_client("openai", api_key=os.getenv("OPENAI_API_KEY"))
 
         # Use same image twice for testing (in real use, different images)
         response, duration = client.prompt(
-            'gpt-4o-mini',
-            'How many images do you see?',
-            images=[sample_image_path, sample_image_path]
+            "gpt-4o-mini",
+            "How many images do you see?",
+            images=[sample_image_path, sample_image_path],
         )
 
         assert isinstance(response, LLMResponse)
@@ -256,15 +243,15 @@ class TestMultiImageSupport:
 
     def test_multiple_images_claude(self, sample_image_path):
         """Test Claude with multiple images."""
-        if not os.getenv('ANTHROPIC_API_KEY'):
+        if not os.getenv("ANTHROPIC_API_KEY"):
             pytest.skip("ANTHROPIC_API_KEY not set")
 
-        client = create_ai_client('anthropic', api_key=os.getenv('ANTHROPIC_API_KEY'))
+        client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
 
         response, duration = client.prompt(
-            'claude-3-5-sonnet-20241022',
-            'How many images do you see?',
-            images=[sample_image_path, sample_image_path]
+            "claude-3-5-sonnet-20241022",
+            "How many images do you see?",
+            images=[sample_image_path, sample_image_path],
         )
 
         assert isinstance(response, LLMResponse)
@@ -282,34 +269,36 @@ class TestVisionBenchmarkWorkflow:
     @pytest.fixture(autouse=True)
     def skip_if_no_api_key(self):
         """Skip test if API key not set."""
-        if not os.getenv('OPENAI_API_KEY'):
+        if not os.getenv("OPENAI_API_KEY"):
             pytest.skip("OPENAI_API_KEY not set for benchmark simulation")
 
     def test_sequential_image_processing(self, sample_image_path):
         """Simulate processing multiple images sequentially."""
-        client = create_ai_client('openai', api_key=os.getenv('OPENAI_API_KEY'))
+        client = create_ai_client("openai", api_key=os.getenv("OPENAI_API_KEY"))
 
         # Simulate processing 3 images
         results = []
         for i in range(3):
             response, duration = client.prompt(
-                'gpt-4o-mini',
-                f'Transcribe any text in this image. Image {i+1}.',
-                images=[sample_image_path]
+                "gpt-4o-mini",
+                f"Transcribe any text in this image. Image {i+1}.",
+                images=[sample_image_path],
             )
-            results.append({
-                'image_num': i + 1,
-                'success': response.text != "",
-                'duration': duration,
-                'tokens': response.usage.total_tokens
-            })
+            results.append(
+                {
+                    "image_num": i + 1,
+                    "success": response.text != "",
+                    "duration": duration,
+                    "tokens": response.usage.total_tokens,
+                }
+            )
 
         # Verify all succeeded
         assert len(results) == 3
-        assert all(r['success'] for r in results)
+        assert all(r["success"] for r in results)
 
-        total_duration = sum(r['duration'] for r in results)
-        total_tokens = sum(r['tokens'] for r in results)
+        total_duration = sum(r["duration"] for r in results)
+        total_tokens = sum(r["tokens"] for r in results)
 
         print(f"\nBenchmark simulation results:")
         print(f"  Total duration: {total_duration:.2f}s")

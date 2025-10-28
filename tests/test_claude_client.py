@@ -1,6 +1,7 @@
 """
 Tests for Claude client implementation.
 """
+
 import pytest
 import json
 from unittest.mock import Mock, patch
@@ -13,26 +14,23 @@ class TestClaudeClient:
 
     def test_claude_client_initialization(self):
         """Test Claude client initialization."""
-        with patch('ai_client.claude_client.Anthropic') as mock_anthropic:
-            client = create_ai_client('anthropic', api_key='test-key')
+        with patch("ai_client.claude_client.Anthropic") as mock_anthropic:
+            client = create_ai_client("anthropic", api_key="test-key")
 
             assert isinstance(client, ClaudeClient)
-            assert client.PROVIDER_ID == 'anthropic'
+            assert client.PROVIDER_ID == "anthropic"
             assert client.SUPPORTS_MULTIMODAL is True
             mock_anthropic.assert_called_once()
 
     def test_prompt_text_only(self, mock_claude_response):
         """Test text-only prompt."""
-        with patch('ai_client.claude_client.Anthropic') as mock_anthropic_class:
+        with patch("ai_client.claude_client.Anthropic") as mock_anthropic_class:
             mock_client = Mock()
             mock_anthropic_class.return_value = mock_client
             mock_client.messages.create.return_value = mock_claude_response
 
-            client = create_ai_client('anthropic', api_key='test-key')
-            response, duration = client.prompt(
-                'claude-3-5-sonnet-20241022',
-                'Hello!'
-            )
+            client = create_ai_client("anthropic", api_key="test-key")
+            response, duration = client.prompt("claude-3-5-sonnet-20241022", "Hello!")
 
             # Check response
             assert isinstance(response, LLMResponse)
@@ -46,36 +44,34 @@ class TestClaudeClient:
             # Check API call
             mock_client.messages.create.assert_called_once()
             call_args = mock_client.messages.create.call_args
-            assert call_args.kwargs['model'] == 'claude-3-5-sonnet-20241022'
-            assert 'messages' in call_args.kwargs
-            assert 'system' in call_args.kwargs
+            assert call_args.kwargs["model"] == "claude-3-5-sonnet-20241022"
+            assert "messages" in call_args.kwargs
+            assert "system" in call_args.kwargs
 
     def test_prompt_with_images(self, mock_claude_response, sample_image_path):
         """Test prompt with images."""
-        with patch('ai_client.claude_client.Anthropic') as mock_anthropic_class:
+        with patch("ai_client.claude_client.Anthropic") as mock_anthropic_class:
             mock_client = Mock()
             mock_anthropic_class.return_value = mock_client
             mock_client.messages.create.return_value = mock_claude_response
 
-            client = create_ai_client('anthropic', api_key='test-key')
+            client = create_ai_client("anthropic", api_key="test-key")
             response, duration = client.prompt(
-                'claude-3-5-sonnet-20241022',
-                'Describe this image',
-                images=[sample_image_path]
+                "claude-3-5-sonnet-20241022", "Describe this image", images=[sample_image_path]
             )
 
             assert isinstance(response, LLMResponse)
 
             # Check that images were included
             call_args = mock_client.messages.create.call_args
-            messages = call_args.kwargs['messages']
-            content = messages[0]['content']
+            messages = call_args.kwargs["messages"]
+            content = messages[0]["content"]
             assert isinstance(content, list)
-            assert any(item['type'] == 'image' for item in content)
+            assert any(item["type"] == "image" for item in content)
 
     def test_prompt_with_structured_output(self, mock_pydantic_model):
         """Test prompt with structured output via tools."""
-        with patch('ai_client.claude_client.Anthropic') as mock_anthropic_class:
+        with patch("ai_client.claude_client.Anthropic") as mock_anthropic_class:
             mock_client = Mock()
             mock_anthropic_class.return_value = mock_client
 
@@ -93,27 +89,25 @@ class TestClaudeClient:
 
             mock_client.messages.create.return_value = mock_response
 
-            client = create_ai_client('anthropic', api_key='test-key')
+            client = create_ai_client("anthropic", api_key="test-key")
             response, duration = client.prompt(
-                'claude-3-5-sonnet-20241022',
-                'Extract data',
-                response_format=mock_pydantic_model
+                "claude-3-5-sonnet-20241022", "Extract data", response_format=mock_pydantic_model
             )
 
             # Check that tools were used
             call_args = mock_client.messages.create.call_args
-            assert 'tools' in call_args.kwargs
-            assert 'tool_choice' in call_args.kwargs
+            assert "tools" in call_args.kwargs
+            assert "tool_choice" in call_args.kwargs
 
             # Check response contains validated JSON
             assert isinstance(response, LLMResponse)
             data = json.loads(response.text)
-            assert data['name'] == "test"
-            assert data['value'] == 42
+            assert data["name"] == "test"
+            assert data["value"] == 42
 
     def test_max_tokens_varies_by_model(self):
         """Test that max_tokens defaults vary by model."""
-        with patch('ai_client.claude_client.Anthropic') as mock_anthropic_class:
+        with patch("ai_client.claude_client.Anthropic") as mock_anthropic_class:
             mock_client = Mock()
             mock_anthropic_class.return_value = mock_client
             mock_response = Mock()
@@ -126,14 +120,14 @@ class TestClaudeClient:
             mock_response.usage.output_tokens = 10
             mock_client.messages.create.return_value = mock_response
 
-            client = create_ai_client('anthropic', api_key='test-key')
+            client = create_ai_client("anthropic", api_key="test-key")
 
             # Test opus model
-            client.prompt('claude-3-opus-20240229', 'test')
+            client.prompt("claude-3-opus-20240229", "test")
             call_args = mock_client.messages.create.call_args
-            assert call_args.kwargs['max_tokens'] == 4096
+            assert call_args.kwargs["max_tokens"] == 4096
 
             # Test sonnet model
-            client.prompt('claude-3-5-sonnet-20241022', 'test')
+            client.prompt("claude-3-5-sonnet-20241022", "test")
             call_args = mock_client.messages.create.call_args
-            assert call_args.kwargs['max_tokens'] == 8192
+            assert call_args.kwargs["max_tokens"] == 8192

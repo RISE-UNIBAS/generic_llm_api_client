@@ -4,6 +4,7 @@ Qwen-specific client using OpenAI-compatible API.
 Qwen uses an OpenAI-compatible API, so we can reuse the OpenAIClient
 with a custom base URL.
 """
+
 from .openai_client import OpenAIClient
 
 
