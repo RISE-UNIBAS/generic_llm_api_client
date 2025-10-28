@@ -1,0 +1,5 @@
+anthropic~=0.71.0
+openai~=2.6.1
+mistralai~=1.9.11
+google-genai~=1.46.0
+requests~=2.32.5

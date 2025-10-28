@@ -1,0 +1,106 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "generic-llm-api-client"
+version = "0.1.0"
+description = "A unified, provider-agnostic Python client for multiple LLM APIs"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Sorin", email = "your-email@example.com"}
+]
+maintainers = [
+    {name = "Sorin", email = "your-email@example.com"}
+]
+keywords = [
+    "llm",
+    "ai",
+    "openai",
+    "anthropic",
+    "claude",
+    "gemini",
+    "mistral",
+    "deepseek",
+    "qwen",
+    "api-client",
+    "humanities",
+    "research",
+    "benchmarking"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "anthropic~=0.71.0",
+    "openai~=2.6.1",
+    "mistralai~=1.9.11",
+    "google-genai~=1.46.0",
+    "requests~=2.32.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+    "python-dotenv>=1.0.0",
+    "Pillow>=10.0.0",
+    "black>=23.0.0",
+    "mypy>=1.0.0",
+    "ruff>=0.1.0",
+]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+    "python-dotenv>=1.0.0",
+    "Pillow>=10.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/generic-llm-api-client"
+Documentation = "https://github.com/yourusername/generic-llm-api-client#readme"
+Repository = "https://github.com/yourusername/generic-llm-api-client"
+Issues = "https://github.com/yourusername/generic-llm-api-client/issues"
+
+[tool.setuptools]
+packages = ["ai_client"]
+
+[tool.setuptools.package-data]
+ai_client = ["py.typed"]
+
+[tool.black]
+line-length = 100
+target-version = ['py39', 'py310', 'py311', 'py312']
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"

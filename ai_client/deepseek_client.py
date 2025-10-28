@@ -1,20 +1,27 @@
 """
-Qwen-specific client for OpenAI API.
-"""
+DeepSeek-specific client using OpenAI-compatible API.
 
-from openai import OpenAI
-from . import OpenAIClient
+DeepSeek uses an OpenAI-compatible API, so we can reuse the OpenAIClient
+with a custom base URL.
+"""
+from .openai_client import OpenAIClient
 
 
 class DeepSeekClient(OpenAIClient):
     """
-    QwenClient class for OpenAI API.
+    DeepSeek client using OpenAI-compatible API.
+
+    This client simply extends OpenAIClient with a custom base URL.
     """
-    
+
     PROVIDER_ID = "deepseek"
     SUPPORTS_MULTIMODAL = True
-    
+
     def _init_client(self):
-        """Initialize the OpenAI client with the provided API key."""
-        self.api_client = OpenAI(api_key=self.api_key,
-                                 base_url="https://api.deepseek.com/v1")
+        """Initialize the client with DeepSeek's base URL."""
+        # Override base_url if not provided
+        if not self.base_url:
+            self.base_url = "https://api.deepseek.com/v1"
+
+        # Call parent initialization
+        super()._init_client()

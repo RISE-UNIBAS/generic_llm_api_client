@@ -2,116 +2,195 @@
 Mistral-specific implementation of the BaseAIClient.
 
 This module provides the MistralClient class, which implements the BaseAIClient
-interface specifically for Mistral's API. It currently supports text-only
-interactions with the Mistral chat completion API.
+interface specifically for Mistral's API, supporting both text-only and multimodal
+interactions.
 """
-import time
-from datetime import datetime, timezone
+import base64
+import json
+import logging
 from typing import List, Tuple, Any, Optional
 
 from mistralai import Mistral
 
 from .base_client import BaseAIClient
+from .response import LLMResponse, Usage
+
+logger = logging.getLogger(__name__)
 
 
 class MistralClient(BaseAIClient):
     """
     Mistral-specific implementation of the BaseAIClient.
-    
+
     This class implements the BaseAIClient interface for Mistral's API,
-    currently supporting text-only requests via the chat completion API.
-    
+    supporting text-only and multimodal requests via the chat completion API.
+
     Key features:
     - Integration with Mistral's chat completion API
-    - Support for Mistral-specific parameters like random_seed, presence_penalty, etc.
+    - Support for multimodal content (text + images)
+    - Support for Mistral-specific parameters
+    - Structured output via JSON mode
     """
-    
+
     PROVIDER_ID = "mistral"
-    SUPPORTS_MULTIMODAL = False
-    
+    SUPPORTS_MULTIMODAL = True  # Mistral supports images
+
     def _init_client(self):
         """Initialize the Mistral client with the provided API key."""
         self.api_client = Mistral(api_key=self.api_key)
-    
-    def do_prompt(self, model: str, prompt: str) -> Any:
+
+    def _prepare_content_with_images(self, prompt: str, images: List[str]) -> List[dict]:
+        """
+        Prepare Mistral content with text and images.
+
+        Args:
+            prompt: The text prompt
+            images: List of image paths/URLs
+
+        Returns:
+            List of content blocks for Mistral API
+        """
+        content = [{"type": "text", "text": prompt}]
+
+        # Add images if any
+        for resource in images:
+            try:
+                if self.is_url(resource):
+                    # For URLs, use directly
+                    data_uri = resource
+                else:
+                    # For local files, encode as base64
+                    with open(resource, "rb") as image_file:
+                        base64_image = base64.b64encode(image_file.read()).decode("utf-8")
+
+                        # Detect MIME type from file extension
+                        from .utils import detect_image_mime_type
+                        mime_type = detect_image_mime_type(resource)
+
+                        data_uri = f"data:{mime_type};base64,{base64_image}"
+
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": data_uri}
+                })
+            except Exception as e:
+                logger.error(f"Error processing image {resource}: {e}")
+
+        return content
+
+    def _do_prompt(
+        self,
+        model: str,
+        prompt: str,
+        images: List[str],
+        system_prompt: str,
+        response_format: Optional[Any],
+        **kwargs
+    ) -> LLMResponse:
         """
         Send a prompt to the Mistral model and get the response.
-        
+
         Args:
-            model (str): The Mistral model identifier (e.g., "mistral-medium", "mistral-small")
-            prompt (str): The text prompt to send
-            
+            model: The Mistral model identifier
+            prompt: The text prompt to send
+            images: List of image paths/URLs
+            system_prompt: System prompt to use
+            response_format: Optional Pydantic model for structured output
+            **kwargs: Additional Mistral-specific parameters
+
         Returns:
-            tuple: (response_object, elapsed_time_in_seconds)
+            LLMResponse object with the provider's response
         """
-        
-        # Prepare the base message structure
-        messages = [
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-        
-        # Prepend system message if allowed by this Mistral model version
-        # Some older Mistral models don't support system messages
-        if model not in ['mistral-tiny', 'mistral-small-2402']:
-            messages.insert(0, {
-                "role": "system",
-                "content": self.system_prompt
-            })
-        
-        # Extract Mistral-specific parameters from settings
+        # Prepare content with images
+        content = self._prepare_content_with_images(prompt, images)
+
+        # Build messages
+        messages = [{"role": "user", "content": content}]
+
+        # Add system message if provided
+        if system_prompt:
+            messages.insert(0, {"role": "system", "content": system_prompt})
+
         params = {
-            'model': model,
-            'messages': messages
+            'messages': messages,
+            'model': model
         }
-        
-        # Add optional parameters if specified
-        optional_params = [
-            'temperature', 'max_tokens', 'random_seed', 'presence_penalty'
-        ]
-        
-        for param in optional_params:
-            if param in self.settings and self.settings[param] is not None:
-                # Handle terminology differences
-                if param == 'random_seed':
-                    params['random_seed'] = self.settings[param]
-                elif param == 'presence_penalty':
-                    params['presence_penalty'] = self.settings[param]
-                else:
-                    params[param] = self.settings[param]
-        
-        # Send the request to Mistral
-        response = self.api_client.chat.complete(**params)
 
-        return response
+        # Handle structured output
+        if response_format and hasattr(response_format, 'model_json_schema'):
+            schema = response_format.model_json_schema()
+            schema_prompt = f"\n\nReturn a JSON response matching this exact schema: {json.dumps(schema)}"
+            messages[-1]["content"] = prompt + schema_prompt
+            params['response_format'] = {"type": "json_object"}
 
-    def transpose_response(self, response: Any) -> dict:
-        return_value = self.get_empty_generic_response()
-        return_value['text'] = response.content[0].text
-        return return_value
+        # Send the request
+        raw_response = self.api_client.chat.complete(**params)
+
+        return self._create_response_from_raw(raw_response, model, response_format)
+
+    def _create_response_from_raw(
+        self,
+        raw_response: Any,
+        model: str,
+        response_format: Optional[Any]
+    ) -> LLMResponse:
+        """
+        Create LLMResponse from Mistral raw response.
+
+        Args:
+            raw_response: Raw Mistral response object
+            model: Model identifier
+            response_format: Pydantic model if structured output was requested
+
+        Returns:
+            LLMResponse object
+        """
+        choice = raw_response.choices[0]
+        text = choice.message.content if hasattr(choice.message, 'content') else ""
+
+        # If response_format was provided, try to validate
+        if response_format and hasattr(response_format, 'model_json_schema') and text:
+            try:
+                json_data = json.loads(text)
+                validated = response_format(**json_data)
+                text = validated.model_dump_json()
+            except Exception as e:
+                logger.warning(f"Failed to validate Mistral structured response: {e}")
+                # Keep original text
+
+        usage = Usage()
+        if hasattr(raw_response, 'usage') and raw_response.usage:
+            usage = Usage(
+                input_tokens=raw_response.usage.prompt_tokens,
+                output_tokens=raw_response.usage.completion_tokens,
+                total_tokens=raw_response.usage.total_tokens
+            )
+
+        finish_reason = choice.finish_reason if hasattr(choice, 'finish_reason') else "unknown"
+
+        return LLMResponse(
+            text=text,
+            model=model,
+            provider=self.PROVIDER_ID,
+            finish_reason=finish_reason,
+            usage=usage,
+            raw_response=raw_response
+        )
 
     def get_model_list(self) -> List[Tuple[str, Optional[str]]]:
         """
         Get a list of available models from Mistral.
-        
+
         Returns:
-            list: List of tuples (model_id, created_date)
+            List of tuples (model_id, created_date)
         """
         if self.api_client is None:
             raise ValueError('Mistral client is not initialized.')
-        
+
         model_list = []
         raw_list = self.api_client.models.list()
-        
-        for model in raw_list.data:
-            # Only include models that support chat completion
-            completion = getattr(model.capabilities, 'completion_chat', None)
-            if completion:
-                readable_date = datetime.fromtimestamp(
-                    model.created, tz=timezone.utc
-                ).strftime('%Y-%m-%d')
-                model_list.append((model.id, readable_date))
-        
+
+        for model in raw_list:
+            model_list.append((model.id, None))
+
         return model_list

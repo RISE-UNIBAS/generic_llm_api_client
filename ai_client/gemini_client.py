@@ -5,164 +5,263 @@ This module provides the GeminiClient class, which implements the BaseAIClient
 interface specifically for Google's Gemini API, supporting both text-only and
 multimodal (text + images) content.
 """
-import tempfile
-import time
-from datetime import datetime
+import base64
+import json
+import logging
 from typing import List, Tuple, Any, Optional
 
-import google.generativeai as genai
+import google.genai as genai
+from google.genai.types import GenerateContentConfig, Part
 import requests
 
 from .base_client import BaseAIClient
+from .response import LLMResponse, Usage
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiClient(BaseAIClient):
     """
     Google Gemini-specific implementation of the BaseAIClient.
-    
+
     This class implements the BaseAIClient interface for Google's Gemini API,
     handling both text-only and multimodal (text + images) requests.
-    
+
     Key features:
     - Full support for multimodal content via Gemini Pro Vision models
-    - Image uploading specific to Gemini's requirements
-    - Support for Gemini-specific parameters like top_k, top_p, etc.
+    - Support for Gemini-specific parameters like top_k, top_p
+    - Structured output via response schema
     """
-    
+
     PROVIDER_ID = "genai"
     SUPPORTS_MULTIMODAL = True
-    
+
     def _init_client(self):
-        """Configure Gemini API with the provided API key."""
-        genai.configure(api_key=self.api_key)
-        # No specific client object is needed for Gemini
-        self.api_client = True
-    
-    def _prepare_images(self) -> List[Any]:
+        """Initialize Gemini API client with the provided API key."""
+        self.api_client = genai.Client(api_key=self.api_key)
+
+    def _prepare_content_with_images(self, prompt: str, images: List[str]) -> List[Any]:
         """
-        Process and upload image resources for Gemini.
-        
+        Prepare Gemini content with text and images.
+
+        Args:
+            prompt: The text prompt
+            images: List of image paths/URLs
+
         Returns:
-            list: List of uploaded image objects
+            List of content parts for Gemini API
         """
-        images = []
-        
-        for resource in self.image_resources:
-            if self.is_url(resource):
-                # For URLs, fetch the image and provide as blob
-                try:
+        contents = [prompt]
+
+        # Add images if any
+        for resource in images:
+            try:
+                if self.is_url(resource):
+                    # For URLs, fetch the image
                     response = requests.get(resource)
                     if response.status_code == 200:
-                        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=True) as tmp:
-                            tmp.write(response.content)
-                            tmp.flush()  # Ensure everything is written before upload
-                            
-                            # Apply resize if specified
-                            resize_option = None
-                            if 'image_resize' in self.settings and self.settings['image_resize'] not in ('', 'none'):
-                                try:
-                                    width, height = self.settings['image_resize'].split('x')
-                                    resize_option = (int(width), int(height))
-                                except (ValueError, TypeError):
-                                    # If parsing fails, don't apply resize
-                                    pass
-                            
-                            # Upload the image with optional resize
-                            if resize_option:
-                                image_part = genai.upload_file(path=tmp.name, resize=resize_option)
-                            else:
-                                image_part = genai.upload_file(path=tmp.name)
-                                
-                            images.append(image_part)
-                except Exception as e:
-                    print(f"Error fetching image from URL {resource}: {e}")
-            else:
-                # For local files, use the file path
-                try:
-                    # Apply resize if specified
-                    resize_option = None
-                    if 'image_resize' in self.settings and self.settings['image_resize'] not in ('', 'none'):
-                        try:
-                            width, height = self.settings['image_resize'].split('x')
-                            resize_option = (int(width), int(height))
-                        except (ValueError, TypeError):
-                            # If parsing fails, don't apply resize
-                            pass
-                    
-                    # Upload the image with optional resize
-                    if resize_option:
-                        image_file = genai.upload_file(path=resource, resize=resize_option)
+                        image_data = response.content
                     else:
-                        image_file = genai.upload_file(path=resource)
-                        
-                    images.append(image_file)
-                except Exception as e:
-                    print(f"Error uploading image file {resource}: {e}")
-        
-        return images
-    
-    def do_prompt(self, model: str, prompt: str) -> Any:
+                        logger.error(f"Failed to fetch image from URL {resource}: {response.status_code}")
+                        continue
+                else:
+                    # For local files, read the image
+                    with open(resource, 'rb') as f:
+                        image_data = f.read()
+
+                # Detect MIME type from file extension
+                from .utils import detect_image_mime_type
+                mime_type = detect_image_mime_type(resource)
+
+                # Create image part
+                image_part = Part(
+                    inline_data={
+                        "mime_type": mime_type,
+                        "data": base64.b64encode(image_data).decode('utf-8')
+                    }
+                )
+                contents.append(image_part)
+            except Exception as e:
+                logger.error(f"Error processing image {resource}: {e}")
+
+        return contents
+
+    @staticmethod
+    def _remove_defaults_from_schema(schema):
+        """Recursively remove default values from JSON schema (for GenAI compatibility)."""
+        if isinstance(schema, dict):
+            if 'default' in schema:
+                del schema['default']
+            for key, value in schema.items():
+                if isinstance(value, (dict, list)):
+                    GeminiClient._remove_defaults_from_schema(value)
+        elif isinstance(schema, list):
+            for item in schema:
+                if isinstance(item, (dict, list)):
+                    GeminiClient._remove_defaults_from_schema(item)
+
+    def _do_prompt(
+        self,
+        model: str,
+        prompt: str,
+        images: List[str],
+        system_prompt: str,
+        response_format: Optional[Any],
+        **kwargs
+    ) -> LLMResponse:
         """
         Send a prompt to the Gemini model and get the response.
-        
+
         Args:
-            model (str): The Gemini model identifier (e.g., "gemini-pro", "gemini-pro-vision")
-            prompt (str): The text prompt to send
-            
+            model: The Gemini model identifier (e.g., "gemini-pro", "gemini-pro-vision")
+            prompt: The text prompt to send
+            images: List of image paths/URLs
+            system_prompt: System prompt (prepended to prompt for Gemini)
+            response_format: Optional Pydantic model for structured output
+            **kwargs: Additional Gemini-specific parameters
+
         Returns:
-            tuple: (response_object, elapsed_time_in_seconds)
+            LLMResponse object with the provider's response
         """
-        # Initialize the model with generation config
+        # Prepend system prompt to user prompt for Gemini
+        full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+
+        # Prepare content with images
+        contents = self._prepare_content_with_images(full_prompt, images)
+
+        # Build generation config
         generation_config = {}
-        
-        # Extract Gemini-specific parameters from settings
-        optional_params = [
-            'temperature', 'top_p', 'top_k', 'max_output_tokens',
-            'candidate_count', 'stop_sequences'
-        ]
-        
+
+        # Extract Gemini-specific parameters
+        optional_params = ['temperature', 'top_p', 'top_k', 'max_output_tokens', 'candidate_count', 'stop_sequences']
         for param in optional_params:
-            if param in self.settings and self.settings[param] is not None:
-                # Map max_tokens to max_output_tokens if needed
-                if param == 'max_tokens':
-                    generation_config['max_output_tokens'] = self.settings[param]
+            value = kwargs.get(param, self.settings.get(param))
+            if value is not None:
+                generation_config[param] = value
+
+        # Handle structured output
+        if response_format and hasattr(response_format, 'model_json_schema'):
+            schema = response_format.model_json_schema()
+            # GenAI doesn't support default values in schema
+            self._remove_defaults_from_schema(schema)
+
+            generation_config['response_mime_type'] = "application/json"
+            generation_config['response_schema'] = schema
+
+        # Generate content
+        # Try different approaches based on what parameters are available
+        try:
+            if generation_config:
+                # Try passing config as a GenerateContentConfig object
+                config = GenerateContentConfig(**generation_config)
+                raw_response = self.api_client.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=config
+                )
+            else:
+                raw_response = self.api_client.models.generate_content(
+                    model=model,
+                    contents=contents
+                )
+        except TypeError as e:
+            # If config parameter doesn't work, try passing generation_config directly
+            if 'config' in str(e):
+                logger.warning(f"Config parameter not accepted, trying alternative API: {e}")
+                if generation_config:
+                    raw_response = self.api_client.models.generate_content(
+                        model=model,
+                        contents=contents,
+                        generation_config=generation_config
+                    )
                 else:
-                    generation_config[param] = self.settings[param]
-        
-        # Initialize the model
-        if not generation_config:
-            # Use default config if no custom settings
-            gemini_model = genai.GenerativeModel(model)
-        else:
-            gemini_model = genai.GenerativeModel(model, generation_config=generation_config)
-        
-        # Process images if available
-        images = []
-        if self.image_resources:
-            images = self._prepare_images()
-        
-        # Generate content with text and any images
-        response = gemini_model.generate_content([prompt] + images)
+                    raw_response = self.api_client.models.generate_content(
+                        model=model,
+                        contents=contents
+                    )
+            else:
+                raise
 
-        return response
+        return self._create_response_from_raw(raw_response, model, response_format)
 
-    def transpose_response(self, response: Any) -> dict:
-        return_value = self.get_empty_generic_response()
-        return_value['text'] = response.candidates[0].content.parts[0].text
-        return return_value
+    def _create_response_from_raw(
+        self,
+        raw_response: Any,
+        model: str,
+        response_format: Optional[Any]
+    ) -> LLMResponse:
+        """
+        Create LLMResponse from Gemini raw response.
+
+        Args:
+            raw_response: Raw Gemini response object
+            model: Model identifier
+            response_format: Pydantic model if structured output was requested
+
+        Returns:
+            LLMResponse object
+        """
+        text = raw_response.text if hasattr(raw_response, 'text') else ""
+
+        # If response_format was provided, try to validate
+        if response_format and hasattr(response_format, 'model_json_schema') and text:
+            try:
+                json_data = json.loads(text)
+                validated = response_format(**json_data)
+                text = validated.model_dump_json()
+            except Exception as e:
+                logger.warning(f"Failed to validate Gemini structured response: {e}")
+                # Keep original text
+
+        usage = Usage()
+        if hasattr(raw_response, 'usage_metadata'):
+            usage = Usage(
+                input_tokens=raw_response.usage_metadata.prompt_token_count,
+                output_tokens=raw_response.usage_metadata.candidates_token_count,
+                total_tokens=raw_response.usage_metadata.total_token_count
+            )
+
+        # Determine finish reason
+        finish_reason = "unknown"
+        if hasattr(raw_response, 'candidates') and raw_response.candidates:
+            candidate = raw_response.candidates[0]
+            if hasattr(candidate, 'finish_reason'):
+                # Extract the value from the enum (e.g., FinishReason.STOP -> 'STOP')
+                fr = candidate.finish_reason
+                if hasattr(fr, 'value'):
+                    finish_reason = fr.value
+                elif hasattr(fr, 'name'):
+                    finish_reason = fr.name
+                else:
+                    finish_reason = str(fr)
+
+        return LLMResponse(
+            text=text,
+            model=model,
+            provider=self.PROVIDER_ID,
+            finish_reason=finish_reason,
+            usage=usage,
+            raw_response=raw_response
+        )
 
     def get_model_list(self) -> List[Tuple[str, Optional[str]]]:
         """
         Get a list of available models from Gemini.
-        
+
         Returns:
-            list: List of tuples (model_id, created_date)
+            List of tuples (model_id, created_date)
         """
         model_list = []
-        
-        raw_list = genai.list_models()
-        for model in raw_list:
-            if model.display_name.startswith("Gemini"):
-                model_list.append((model.name.lstrip("models/"), None))
-        
+
+        try:
+            raw_list = self.api_client.models.list()
+            for model in raw_list:
+                model_name = model.name if hasattr(model, 'name') else str(model)
+                # Remove 'models/' prefix if present
+                if model_name.startswith('models/'):
+                    model_name = model_name[7:]
+                model_list.append((model_name, None))
+        except Exception as e:
+            logger.error(f"Error listing Gemini models: {e}")
+
         return model_list
