@@ -25,6 +25,8 @@ This package is a **convenience wrapper** for working with multiple LLM provider
 
 - **Provider-Agnostic**: Single interface for OpenAI, Anthropic, Google, Mistral, DeepSeek, Qwen, and OpenRouter
 - **Multimodal Support**: Text + images across all supporting providers
+- **Text File Support**: Automatically include text files in prompts for document analysis
+- **Automatic Image Resizing**: Reduce API costs by auto-resizing large images
 - **Structured Output**: Unified Pydantic model support across providers
 - **Rich Response Objects**: Detailed token usage, costs, timing, and metadata
 - **Async Support**: Parallel processing for faster benchmarks
@@ -106,6 +108,86 @@ response, duration = client.prompt(
     'Compare these two images',
     images=['image1.jpg', 'image2.jpg']
 )
+```
+
+### Text Files (NEW in v0.2.0)
+
+Include text files in your prompts for document analysis:
+
+```python
+from ai_client import create_ai_client
+
+client = create_ai_client('openai', api_key='sk-...')
+
+# Analyze a single text file
+response, duration = client.prompt(
+    'gpt-4o',
+    'Summarize this historical document',
+    files=['manuscript_transcription.txt']
+)
+
+# Analyze multiple documents
+response, duration = client.prompt(
+    'gpt-4o',
+    'Compare these two texts and identify common themes',
+    files=['document1.txt', 'document2.txt']
+)
+
+print(response.text)
+```
+
+### Automatic Image Resizing (NEW in v0.2.0)
+
+Reduce API costs by automatically resizing large images:
+
+```python
+from ai_client import create_ai_client
+
+# Enable auto-resize (default: 2048px max dimension)
+client = create_ai_client(
+    'openai',
+    api_key='sk-...',
+    max_image_size=2048,  # Images larger than this will be resized
+    image_quality=85       # JPEG quality for resized images
+)
+
+# This 4000x3000 image will be automatically resized to 2048x1536
+response, duration = client.prompt(
+    'gpt-4o',
+    'Analyze this high-resolution historical manuscript',
+    images=['huge_manuscript_scan.jpg']  # Original file is never modified
+)
+
+# Disable resizing if needed
+client = create_ai_client('openai', api_key='sk-...', max_image_size=None)
+```
+
+### Combining Files and Images (NEW in v0.2.0)
+
+Perfect for humanities research - compare visual and textual sources:
+
+```python
+from ai_client import create_ai_client
+
+client = create_ai_client('openai', api_key='sk-...')
+
+# Compare image to text description
+response, duration = client.prompt(
+    'gpt-4o',
+    'Does this manuscript image match the catalog description?',
+    images=['manuscript_photo.jpg'],
+    files=['catalog_entry.txt']
+)
+
+# Analyze multiple sources together
+response, duration = client.prompt(
+    'gpt-4o',
+    'Which of these paintings best matches the art historical description?',
+    images=['painting_a.jpg', 'painting_b.jpg', 'painting_c.jpg'],
+    files=['art_history_text.txt']
+)
+
+print(response.text)
 ```
 
 ### Structured Output with Pydantic
@@ -285,10 +367,10 @@ async def benchmark_models():
     for provider_id, model in providers:
         client = create_ai_client(provider_id, api_key=f'{provider_id}_key')
 
-        response, duration = await client.prompt_async(model, prompt)
+        response = await client.prompt_async(model, prompt)
 
         print(f"\n=== {provider_id}/{model} ===")
-        print(f"Duration: {duration:.2f}s")
+        print(f"Duration: {response.duration:.2f}s")
         print(f"Tokens: {response.usage.total_tokens}")
         print(f"Response: {response.text[:200]}...")
 

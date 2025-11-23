@@ -41,7 +41,7 @@ class TestOpenAIClient:
             mock_client.chat.completions.create.return_value = mock_openai_response
 
             client = create_ai_client("openai", api_key="test-key")
-            response, duration = client.prompt("gpt-4", "Hello!")
+            response = client.prompt("gpt-4", "Hello!")
 
             # Check response
             assert isinstance(response, LLMResponse)
@@ -52,7 +52,7 @@ class TestOpenAIClient:
             assert response.usage.input_tokens == 10
             assert response.usage.output_tokens == 20
             assert response.usage.total_tokens == 30
-            assert duration >= 0
+            assert response.duration >= 0
 
             # Check API call
             mock_client.chat.completions.create.assert_called_once()
@@ -68,7 +68,7 @@ class TestOpenAIClient:
             mock_client.chat.completions.create.return_value = mock_openai_response
 
             client = create_ai_client("openai", api_key="test-key")
-            response, duration = client.prompt(
+            response = client.prompt(
                 "gpt-4o", "Describe this image", images=[sample_image_path]
             )
 
@@ -89,7 +89,7 @@ class TestOpenAIClient:
             mock_client.chat.completions.create.return_value = mock_openai_response
 
             client = create_ai_client("openai", api_key="test-key")
-            response, duration = client.prompt("gpt-4", "Hello", temperature=0.9)
+            response = client.prompt("gpt-4", "Hello", temperature=0.9)
 
             call_args = mock_client.chat.completions.create.call_args
             assert call_args.kwargs["temperature"] == 0.9
@@ -115,7 +115,7 @@ class TestOpenAIClient:
             mock_client.beta.chat.completions.parse.return_value = mock_response
 
             client = create_ai_client("openai", api_key="test-key")
-            response, duration = client.prompt(
+            response = client.prompt(
                 "gpt-4", "Extract data", response_format=mock_pydantic_model
             )
 
@@ -128,6 +128,12 @@ class TestOpenAIClient:
             assert data["name"] == "test"
             assert data["value"] == 42
 
+            # Check that parsed field is populated
+            assert response.parsed is not None
+            assert isinstance(response.parsed, dict)
+            assert response.parsed["name"] == "test"
+            assert response.parsed["value"] == 42
+
     def test_error_response_on_exception(self):
         """Test that errors are handled gracefully."""
         with patch("ai_client.openai_client.OpenAI") as mock_openai_class:
@@ -136,7 +142,7 @@ class TestOpenAIClient:
             mock_client.chat.completions.create.side_effect = Exception("API Error")
 
             client = create_ai_client("openai", api_key="test-key")
-            response, duration = client.prompt("gpt-4", "Hello")
+            response = client.prompt("gpt-4", "Hello")
 
             # Should return error response, not raise
             assert isinstance(response, LLMResponse)

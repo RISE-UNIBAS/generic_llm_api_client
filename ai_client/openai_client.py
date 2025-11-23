@@ -18,6 +18,7 @@ from openai import OpenAI
 
 from .base_client import BaseAIClient
 from .response import LLMResponse, Usage
+from .pricing import calculate_cost
 
 logger = logging.getLogger(__name__)
 
@@ -190,8 +191,14 @@ class OpenAIClient(BaseAIClient):
         choice = raw_response.choices[0]
 
         # For structured output, the parsed object is in message.parsed
+        parsed_data = None
         if hasattr(choice.message, "parsed") and choice.message.parsed:
             text = choice.message.parsed.model_dump_json()
+            # Parse the JSON to dict/list for convenience
+            try:
+                parsed_data = json.loads(text)
+            except Exception:
+                pass
         else:
             text = choice.message.content or ""
 
@@ -202,6 +209,15 @@ class OpenAIClient(BaseAIClient):
                 output_tokens=raw_response.usage.completion_tokens,
                 total_tokens=raw_response.usage.total_tokens,
             )
+            # Calculate cost if pricing data is available
+            costs = calculate_cost(
+                self.PROVIDER_ID,
+                raw_response.model,
+                usage.input_tokens,
+                usage.output_tokens,
+            )
+            if costs is not None:
+                usage.input_cost_usd, usage.output_cost_usd, usage.estimated_cost_usd = costs
 
         return LLMResponse(
             text=text,
@@ -210,6 +226,7 @@ class OpenAIClient(BaseAIClient):
             finish_reason=choice.finish_reason or "unknown",
             usage=usage,
             raw_response=raw_response,
+            parsed=parsed_data,
         )
 
     def _create_response_from_raw(
@@ -228,6 +245,7 @@ class OpenAIClient(BaseAIClient):
         """
         choice = raw_response.choices[0]
         text = choice.message.content or ""
+        parsed_data = None
 
         # If response_format was provided and response is JSON, try to parse it
         if response_format and hasattr(response_format, "model_json_schema"):
@@ -251,6 +269,7 @@ class OpenAIClient(BaseAIClient):
                 json_data = json.loads(content)
                 validated = response_format(**json_data)
                 text = validated.model_dump_json()
+                parsed_data = json_data
             except Exception as e:
                 logger.warning(f"Failed to parse/validate structured response: {e}")
                 # Keep original text
@@ -265,6 +284,17 @@ class OpenAIClient(BaseAIClient):
             # OpenRouter may include cost information
             if hasattr(raw_response.usage, "cost"):
                 usage.estimated_cost_usd = raw_response.usage.cost
+            else:
+                # Calculate cost if pricing data is available
+                costs = calculate_cost(
+                    self.PROVIDER_ID,
+                    raw_response.model,
+                    usage.input_tokens,
+                    usage.output_tokens,
+                )
+                if costs is not None:
+                    usage.input_cost_usd, usage.output_cost_usd, usage.estimated_cost_usd = costs
+
             if hasattr(raw_response.usage, "cached_tokens"):
                 usage.cached_tokens = raw_response.usage.cached_tokens
 
@@ -275,6 +305,7 @@ class OpenAIClient(BaseAIClient):
             finish_reason=choice.finish_reason or "unknown",
             usage=usage,
             raw_response=raw_response,
+            parsed=parsed_data,
         )
 
     def get_model_list(self) -> List[Tuple[str, Optional[str]]]:

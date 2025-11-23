@@ -28,7 +28,7 @@ class TestGeminiClient:
             mock_client.models.generate_content.return_value = mock_gemini_response
 
             client = create_ai_client("genai", api_key="test-key")
-            response, duration = client.prompt("gemini-2.0-flash-exp", "Hello!")
+            response = client.prompt("gemini-2.0-flash-exp", "Hello!")
 
             # Check response
             assert isinstance(response, LLMResponse)
@@ -36,7 +36,7 @@ class TestGeminiClient:
             assert response.provider == "genai"
             assert response.usage.input_tokens == 12
             assert response.usage.output_tokens == 18
-            assert duration >= 0
+            assert response.duration >= 0
 
     def test_prompt_with_images(self, mock_gemini_response, sample_image_path):
         """Test prompt with images."""
@@ -46,7 +46,7 @@ class TestGeminiClient:
             mock_client.models.generate_content.return_value = mock_gemini_response
 
             client = create_ai_client("genai", api_key="test-key")
-            response, duration = client.prompt(
+            response = client.prompt(
                 "gemini-2.0-flash-exp", "Describe this", images=[sample_image_path]
             )
 
@@ -73,7 +73,7 @@ class TestMistralClient:
             mock_client.chat.complete.return_value = mock_mistral_response
 
             client = create_ai_client("mistral", api_key="test-key")
-            response, duration = client.prompt("mistral-large-latest", "Hello!")
+            response = client.prompt("mistral-large-latest", "Hello!")
 
             # Check response
             assert isinstance(response, LLMResponse)
@@ -81,7 +81,7 @@ class TestMistralClient:
             assert response.provider == "mistral"
             assert response.usage.input_tokens == 11
             assert response.usage.output_tokens == 19
-            assert duration >= 0
+            assert response.duration >= 0
 
     def test_prompt_with_images(self, mock_mistral_response, sample_image_path):
         """Test prompt with images."""
@@ -91,7 +91,7 @@ class TestMistralClient:
             mock_client.chat.complete.return_value = mock_mistral_response
 
             client = create_ai_client("mistral", api_key="test-key")
-            response, duration = client.prompt(
+            response = client.prompt(
                 "mistral-large-latest", "Describe this", images=[sample_image_path]
             )
 
@@ -122,7 +122,7 @@ class TestDeepSeekClient:
             mock_client.chat.completions.create.return_value = mock_openai_response
 
             client = create_ai_client("deepseek", api_key="test-key")
-            response, duration = client.prompt("deepseek-chat", "Hello!")
+            response = client.prompt("deepseek-chat", "Hello!")
 
             # Should work like OpenAI client
             assert isinstance(response, LLMResponse)
@@ -153,7 +153,7 @@ class TestQwenClient:
             mock_client.chat.completions.create.return_value = mock_openai_response
 
             client = create_ai_client("qwen", api_key="test-key")
-            response, duration = client.prompt("qwen-turbo", "Hello!")
+            response = client.prompt("qwen-turbo", "Hello!")
 
             # Should work like OpenAI client
             assert isinstance(response, LLMResponse)

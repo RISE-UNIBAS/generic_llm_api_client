@@ -149,3 +149,130 @@ def detect_image_mime_type(file_path: str) -> str:
     }
 
     return mime_types.get(ext, "image/jpeg")
+
+
+def read_text_files(file_paths: list[str]) -> str:
+    """
+    Read text files and format them for inclusion in a prompt.
+
+    Args:
+        file_paths: List of paths to text files
+
+    Returns:
+        Formatted string with file contents wrapped in XML-like tags
+
+    Example:
+        >>> files = read_text_files(['doc1.txt', 'doc2.txt'])
+        >>> # Returns:
+        >>> # <file name="doc1.txt">
+        >>> # content of doc1...
+        >>> # </file>
+        >>> #
+        >>> # <file name="doc2.txt">
+        >>> # content of doc2...
+        >>> # </file>
+    """
+    import os
+
+    if not file_paths:
+        return ""
+
+    file_sections = []
+
+    for filepath in file_paths:
+        filename = os.path.basename(filepath)
+
+        try:
+            # Try UTF-8 first (most common)
+            with open(filepath, "r", encoding="utf-8") as f:
+                content = f.read()
+        except UnicodeDecodeError:
+            # Fallback to latin-1 for older documents
+            try:
+                with open(filepath, "r", encoding="latin-1") as f:
+                    content = f.read()
+            except Exception as e:
+                logger.warning(f"Failed to read file {filepath}: {e}")
+                content = f"[Error reading file: {e}]"
+        except FileNotFoundError:
+            logger.error(f"File not found: {filepath}")
+            content = f"[File not found: {filepath}]"
+        except Exception as e:
+            logger.error(f"Error reading file {filepath}: {e}")
+            content = f"[Error: {e}]"
+
+        file_sections.append(f'<file name="{filename}">\n{content}\n</file>')
+
+    return "\n\n" + "\n\n".join(file_sections)
+
+
+def resize_image_if_needed(
+    image_path: str,
+    max_size: Optional[int] = None,
+    quality: int = 85,
+) -> str:
+    """
+    Resize an image if it exceeds the maximum dimensions.
+
+    Creates a temporary resized copy if resizing is needed.
+    Original file is never modified.
+
+    Args:
+        image_path: Path to the image file
+        max_size: Maximum width or height in pixels (None = no resize)
+        quality: JPEG quality for resized image (1-100)
+
+    Returns:
+        Path to the image to use (original or resized temp file)
+
+    Example:
+        >>> # Image is 4000x3000, max_size=2048
+        >>> resized_path = resize_image_if_needed('large.jpg', max_size=2048)
+        >>> # Returns path to temp file with image resized to 2048x1536
+    """
+    if max_size is None:
+        return image_path
+
+    try:
+        from PIL import Image
+        import tempfile
+        import os
+
+        # Open and check size
+        img = Image.open(image_path)
+
+        # No resize needed if within bounds
+        if max(img.size) <= max_size:
+            logger.debug(f"Image {image_path} is within size limit ({img.size})")
+            return image_path
+
+        # Calculate new size maintaining aspect ratio
+        original_size = img.size
+        img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+
+        # Create temporary file
+        suffix = os.path.splitext(image_path)[1] or ".jpg"
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+
+        # Save resized image
+        # Convert RGBA to RGB for JPEG
+        if img.mode in ("RGBA", "LA", "P"):
+            rgb_img = Image.new("RGB", img.size, (255, 255, 255))
+            rgb_img.paste(img, mask=img.split()[-1] if img.mode == "RGBA" else None)
+            img = rgb_img
+
+        img.save(temp_file.name, "JPEG", quality=quality, optimize=True)
+        temp_file.close()
+
+        logger.info(
+            f"Resized image {os.path.basename(image_path)} from {original_size} to {img.size}"
+        )
+
+        return temp_file.name
+
+    except ImportError:
+        logger.warning("Pillow not installed - cannot resize images. Install with: pip install Pillow")
+        return image_path
+    except Exception as e:
+        logger.warning(f"Failed to resize image {image_path}: {e}. Using original.")
+        return image_path

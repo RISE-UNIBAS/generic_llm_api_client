@@ -61,7 +61,7 @@ class TestOpenAIStructuredOutput:
     def test_openai_simple_structured_output(self):
         """Test OpenAI with simple Pydantic model."""
         client = create_ai_client("openai", api_key=os.getenv("OPENAI_API_KEY"))
-        response, duration = client.prompt(
+        response = client.prompt(
             "gpt-4o-mini",
             "Extract information about: John Smith is a 35 year old software engineer.",
             response_format=PersonInfo,
@@ -88,7 +88,7 @@ class TestOpenAIStructuredOutput:
     def test_openai_complex_structured_output(self):
         """Test OpenAI with complex nested model."""
         client = create_ai_client("openai", api_key=os.getenv("OPENAI_API_KEY"))
-        response, duration = client.prompt(
+        response = client.prompt(
             "gpt-4o-mini",
             'Analyze this text: "Python Programming Guide. This comprehensive guide covers '
             "object-oriented programming, functional programming, and async programming. "
@@ -128,7 +128,7 @@ class TestClaudeStructuredOutput:
     def test_claude_simple_structured_output(self):
         """Test Claude with simple Pydantic model using tools."""
         client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
-        response, duration = client.prompt(
+        response = client.prompt(
             "claude-3-5-haiku-20241022",
             "Extract information about: Jane Doe is a 28 year old data scientist.",
             response_format=PersonInfo,
@@ -155,7 +155,7 @@ class TestClaudeStructuredOutput:
     def test_claude_complex_structured_output(self):
         """Test Claude with complex model."""
         client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
-        response, duration = client.prompt(
+        response = client.prompt(
             "claude-3-5-sonnet-20241022",
             'Analyze this article: "Climate Change Impact Report. This report examines '
             'environmental changes, policy recommendations, and economic impacts across 200 pages."',
@@ -188,7 +188,7 @@ class TestGeminiStructuredOutput:
     def test_gemini_simple_structured_output(self):
         """Test Gemini with simple Pydantic model."""
         client = create_ai_client("genai", api_key=os.getenv("GOOGLE_API_KEY"))
-        response, duration = client.prompt(
+        response = client.prompt(
             "gemini-2.0-flash-exp",
             "Extract information about: Alice Johnson is a 42 year old professor.",
             response_format=PersonInfo,
@@ -226,7 +226,7 @@ class TestMistralStructuredOutput:
     def test_mistral_simple_structured_output(self):
         """Test Mistral with simple Pydantic model."""
         client = create_ai_client("mistral", api_key=os.getenv("MISTRAL_API_KEY"))
-        response, duration = client.prompt(
+        response = client.prompt(
             "mistral-small-latest",
             "Extract information about: Bob Wilson is a 50 year old architect.",
             response_format=PersonInfo,
@@ -273,7 +273,7 @@ class TestStructuredOutputWithVision:
             pytest.skip("OPENAI_API_KEY not set")
 
         client = create_ai_client("openai", api_key=os.getenv("OPENAI_API_KEY"))
-        response, duration = client.prompt(
+        response = client.prompt(
             "gpt-4o-mini",
             "Analyze this manuscript image and extract metadata. "
             "If you cannot determine a value, make a reasonable guess.",
@@ -300,7 +300,7 @@ class TestStructuredOutputWithVision:
             pytest.skip("ANTHROPIC_API_KEY not set")
 
         client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
-        response, duration = client.prompt(
+        response = client.prompt(
             "claude-3-5-sonnet-20241022",
             "Analyze this image and provide manuscript metadata. "
             "Make reasonable guesses if needed.",
@@ -337,7 +337,7 @@ class TestBenchmarkStructuredWorkflow:
         # Simulate processing 3 manuscript images
         results = []
         for i in range(3):
-            response, duration = client.prompt(
+            response = client.prompt(
                 "gpt-4o-mini",
                 f"Analyze manuscript {i+1} and extract metadata.",
                 images=[sample_image_path],
@@ -349,7 +349,7 @@ class TestBenchmarkStructuredWorkflow:
                 {
                     "image_num": i + 1,
                     "metadata": data,
-                    "duration": duration,
+                    "duration": response.duration,
                     "tokens": response.usage.total_tokens,
                 }
             )

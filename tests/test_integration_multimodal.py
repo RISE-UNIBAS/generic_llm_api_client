@@ -33,7 +33,7 @@ class TestOpenAIVision:
     def test_openai_vision_with_image(self, sample_image_path):
         """Test OpenAI vision model with image."""
         client = create_ai_client("openai", api_key=os.getenv("OPENAI_API_KEY"))
-        response, duration = client.prompt("gpt-4o-mini", VISION_PROMPT, images=[sample_image_path])
+        response = client.prompt("gpt-4o-mini", VISION_PROMPT, images=[sample_image_path])
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -46,7 +46,7 @@ class TestOpenAIVision:
         assert response.usage.output_tokens > 0
 
         # Verify timing
-        assert duration > 0
+        assert response.duration > 0
 
         print(f"\nOpenAI vision response: {response.text}")
 
@@ -64,7 +64,7 @@ class TestClaudeVision:
     def test_claude_vision_with_image(self, sample_image_path):
         """Test Claude vision model with image."""
         client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
-        response, duration = client.prompt(
+        response = client.prompt(
             "claude-3-5-sonnet-20241022", VISION_PROMPT, images=[sample_image_path]
         )
 
@@ -79,7 +79,7 @@ class TestClaudeVision:
         assert response.usage.output_tokens > 0
 
         # Verify timing
-        assert duration > 0
+        assert response.duration > 0
 
         print(f"\nClaude vision response: {response.text}")
 
@@ -97,7 +97,7 @@ class TestGeminiVision:
     def test_gemini_vision_with_image(self, sample_image_path):
         """Test Gemini vision model with image."""
         client = create_ai_client("genai", api_key=os.getenv("GOOGLE_API_KEY"))
-        response, duration = client.prompt(
+        response = client.prompt(
             "gemini-2.0-flash-exp", VISION_PROMPT, images=[sample_image_path]
         )
 
@@ -107,7 +107,7 @@ class TestGeminiVision:
         assert response.provider == "genai"
 
         # Verify timing
-        assert duration > 0
+        assert response.duration > 0
 
         print(f"\nGemini vision response: {response.text}")
 
@@ -125,7 +125,7 @@ class TestMistralVision:
     def test_mistral_vision_with_image(self, sample_image_path):
         """Test Mistral vision model with image."""
         client = create_ai_client("mistral", api_key=os.getenv("MISTRAL_API_KEY"))
-        response, duration = client.prompt(
+        response = client.prompt(
             "pixtral-12b-2409", VISION_PROMPT, images=[sample_image_path]
         )
 
@@ -140,7 +140,7 @@ class TestMistralVision:
         assert response.usage.output_tokens > 0
 
         # Verify timing
-        assert duration > 0
+        assert response.duration > 0
 
         print(f"\nMistral vision response: {response.text}")
 
@@ -161,7 +161,7 @@ class TestDeepSeekVision:
 
         # Note: Check if DeepSeek has vision models available
         # Using deepseek-chat as it may support vision
-        response, duration = client.prompt(
+        response = client.prompt(
             "deepseek-chat", VISION_PROMPT, images=[sample_image_path]
         )
 
@@ -171,7 +171,7 @@ class TestDeepSeekVision:
         assert response.provider == "deepseek"
 
         # Verify timing
-        assert duration > 0
+        assert response.duration > 0
 
         print(f"\nDeepSeek vision response: {response.text}")
 
@@ -191,7 +191,7 @@ class TestQwenVision:
         client = create_ai_client("qwen", api_key=os.getenv("QWEN_API_KEY"))
 
         # Qwen has vision-language models
-        response, duration = client.prompt("qwen-vl-max", VISION_PROMPT, images=[sample_image_path])
+        response = client.prompt("qwen-vl-max", VISION_PROMPT, images=[sample_image_path])
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -199,7 +199,7 @@ class TestQwenVision:
         assert response.provider == "qwen"
 
         # Verify timing
-        assert duration > 0
+        assert response.duration > 0
 
         print(f"\nQwen vision response: {response.text}")
 
@@ -228,7 +228,7 @@ class TestMultiImageSupport:
         client = create_ai_client("openai", api_key=os.getenv("OPENAI_API_KEY"))
 
         # Use same image twice for testing (in real use, different images)
-        response, duration = client.prompt(
+        response = client.prompt(
             "gpt-4o-mini",
             "How many images do you see?",
             images=[sample_image_path, sample_image_path],
@@ -236,7 +236,7 @@ class TestMultiImageSupport:
 
         assert isinstance(response, LLMResponse)
         assert response.text != ""
-        assert duration > 0
+        assert response.duration > 0
 
         # Response should mention multiple images
         assert "2" in response.text or "two" in response.text.lower()
@@ -248,7 +248,7 @@ class TestMultiImageSupport:
 
         client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-        response, duration = client.prompt(
+        response = client.prompt(
             "claude-3-5-sonnet-20241022",
             "How many images do you see?",
             images=[sample_image_path, sample_image_path],
@@ -256,7 +256,7 @@ class TestMultiImageSupport:
 
         assert isinstance(response, LLMResponse)
         assert response.text != ""
-        assert duration > 0
+        assert response.duration > 0
 
         # Response should mention multiple images
         assert "2" in response.text or "two" in response.text.lower()
@@ -279,7 +279,7 @@ class TestVisionBenchmarkWorkflow:
         # Simulate processing 3 images
         results = []
         for i in range(3):
-            response, duration = client.prompt(
+            response = client.prompt(
                 "gpt-4o-mini",
                 f"Transcribe any text in this image. Image {i+1}.",
                 images=[sample_image_path],
@@ -288,7 +288,7 @@ class TestVisionBenchmarkWorkflow:
                 {
                     "image_num": i + 1,
                     "success": response.text != "",
-                    "duration": duration,
+                    "duration": response.duration,
                     "tokens": response.usage.total_tokens,
                 }
             )

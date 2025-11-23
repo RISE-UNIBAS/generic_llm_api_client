@@ -17,6 +17,7 @@ import requests
 
 from .base_client import BaseAIClient
 from .response import LLMResponse, Usage
+from .pricing import calculate_cost
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +205,7 @@ class GeminiClient(BaseAIClient):
             LLMResponse object
         """
         text = raw_response.text if hasattr(raw_response, "text") else ""
+        parsed_data = None
 
         # If response_format was provided, try to validate
         if response_format and hasattr(response_format, "model_json_schema") and text:
@@ -211,6 +213,7 @@ class GeminiClient(BaseAIClient):
                 json_data = json.loads(text)
                 validated = response_format(**json_data)
                 text = validated.model_dump_json()
+                parsed_data = json_data
             except Exception as e:
                 logger.warning(f"Failed to validate Gemini structured response: {e}")
                 # Keep original text
@@ -222,6 +225,15 @@ class GeminiClient(BaseAIClient):
                 output_tokens=raw_response.usage_metadata.candidates_token_count,
                 total_tokens=raw_response.usage_metadata.total_token_count,
             )
+            # Calculate cost if pricing data is available
+            costs = calculate_cost(
+                self.PROVIDER_ID,
+                model,
+                usage.input_tokens,
+                usage.output_tokens,
+            )
+            if costs is not None:
+                usage.input_cost_usd, usage.output_cost_usd, usage.estimated_cost_usd = costs
 
         # Determine finish reason
         finish_reason = "unknown"
@@ -244,6 +256,7 @@ class GeminiClient(BaseAIClient):
             finish_reason=finish_reason,
             usage=usage,
             raw_response=raw_response,
+            parsed=parsed_data,
         )
 
     def get_model_list(self) -> List[Tuple[str, Optional[str]]]:

@@ -8,7 +8,7 @@ and benchmarking purposes.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 
 @dataclass
@@ -19,7 +19,9 @@ class Usage:
     output_tokens: int = 0
     total_tokens: int = 0
     cached_tokens: Optional[int] = None
-    estimated_cost_usd: Optional[float] = None
+    input_cost_usd: Optional[float] = None
+    output_cost_usd: Optional[float] = None
+    estimated_cost_usd: Optional[float] = None  # Total cost (for backwards compatibility)
 
     def to_dict(self) -> dict:
         """Convert to dictionary format."""
@@ -30,6 +32,10 @@ class Usage:
         }
         if self.cached_tokens is not None:
             result["cached_tokens"] = self.cached_tokens
+        if self.input_cost_usd is not None:
+            result["input_cost_usd"] = self.input_cost_usd
+        if self.output_cost_usd is not None:
+            result["output_cost_usd"] = self.output_cost_usd
         if self.estimated_cost_usd is not None:
             result["estimated_cost_usd"] = self.estimated_cost_usd
         return result
@@ -52,6 +58,7 @@ class LLMResponse:
         raw_response: The original provider-specific response object
         duration: Time taken for the request in seconds
         timestamp: When the response was generated
+        parsed: Parsed JSON as dict/list when using structured output (None otherwise)
     """
 
     text: str
@@ -62,6 +69,7 @@ class LLMResponse:
     raw_response: Any
     duration: float = 0.0
     timestamp: datetime = field(default_factory=datetime.now)
+    parsed: Optional[Union[dict, list]] = None
 
     def to_dict(self) -> dict:
         """
@@ -70,7 +78,8 @@ class LLMResponse:
         Note: raw_response is excluded as it may not be JSON-serializable.
         Access it directly when needed for detailed analysis.
         """
-        return {
+
+        result = {
             "text": self.text,
             "model": self.model,
             "provider": self.provider,
@@ -83,6 +92,9 @@ class LLMResponse:
                 else self.timestamp
             ),
         }
+        if self.parsed is not None:
+            result["parsed"] = self.parsed
+        return result
 
     def __str__(self) -> str:
         """String representation shows the text content."""

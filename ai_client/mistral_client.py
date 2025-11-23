@@ -15,6 +15,7 @@ from mistralai import Mistral
 
 from .base_client import BaseAIClient
 from .response import LLMResponse, Usage
+from .pricing import calculate_cost
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +143,7 @@ class MistralClient(BaseAIClient):
         """
         choice = raw_response.choices[0]
         text = choice.message.content if hasattr(choice.message, "content") else ""
+        parsed_data = None
 
         # If response_format was provided, try to validate
         if response_format and hasattr(response_format, "model_json_schema") and text:
@@ -149,6 +151,7 @@ class MistralClient(BaseAIClient):
                 json_data = json.loads(text)
                 validated = response_format(**json_data)
                 text = validated.model_dump_json()
+                parsed_data = json_data
             except Exception as e:
                 logger.warning(f"Failed to validate Mistral structured response: {e}")
                 # Keep original text
@@ -160,6 +163,15 @@ class MistralClient(BaseAIClient):
                 output_tokens=raw_response.usage.completion_tokens,
                 total_tokens=raw_response.usage.total_tokens,
             )
+            # Calculate cost if pricing data is available
+            costs = calculate_cost(
+                self.PROVIDER_ID,
+                model,
+                usage.input_tokens,
+                usage.output_tokens,
+            )
+            if costs is not None:
+                usage.input_cost_usd, usage.output_cost_usd, usage.estimated_cost_usd = costs
 
         finish_reason = choice.finish_reason if hasattr(choice, "finish_reason") else "unknown"
 
@@ -170,6 +182,7 @@ class MistralClient(BaseAIClient):
             finish_reason=finish_reason,
             usage=usage,
             raw_response=raw_response,
+            parsed=parsed_data,
         )
 
     def get_model_list(self) -> List[Tuple[str, Optional[str]]]:

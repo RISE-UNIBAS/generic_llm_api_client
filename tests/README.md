@@ -137,7 +137,7 @@ def test_my_feature():
 
         # Test
         client = create_ai_client('openai', api_key='test')
-        response, duration = client.prompt('gpt-4', 'test')
+        response = client.prompt('gpt-4', 'test')
 
         assert response.text == "test"
 ```
@@ -249,7 +249,7 @@ def test_real_openai_call():
         pytest.skip("OPENAI_API_KEY not set")
 
     client = create_ai_client('openai', api_key=api_key)
-    response, duration = client.prompt('gpt-4', 'Say hello')
+    response = client.prompt('gpt-4', 'Say hello')
 
     assert len(response.text) > 0
     assert response.usage.total_tokens > 0

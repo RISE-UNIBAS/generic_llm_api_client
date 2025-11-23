@@ -33,7 +33,7 @@ class TestOpenAIIntegration:
     def test_openai_basic_prompt(self):
         """Test basic OpenAI prompt with real API."""
         client = create_ai_client("openai", api_key=os.getenv("OPENAI_API_KEY"))
-        response, duration = client.prompt("gpt-4o-mini", SIMPLE_PROMPT)
+        response = client.prompt("gpt-4o-mini", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -50,7 +50,7 @@ class TestOpenAIIntegration:
         assert response.usage.total_tokens > 0
 
         # Verify timing
-        assert duration > 0
+        assert response.duration > 0
 
         # Verify response content makes sense
         assert "hello" in response.text.lower() or "working" in response.text.lower()
@@ -69,7 +69,7 @@ class TestClaudeIntegration:
     def test_claude_basic_prompt(self):
         """Test basic Claude prompt with real API."""
         client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
-        response, duration = client.prompt("claude-3-5-haiku-20241022", SIMPLE_PROMPT)
+        response = client.prompt("claude-3-5-haiku-20241022", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -83,7 +83,7 @@ class TestClaudeIntegration:
         assert response.usage.output_tokens > 0
 
         # Verify timing
-        assert duration > 0
+        assert response.duration > 0
 
         # Verify response content
         assert "hello" in response.text.lower() or "working" in response.text.lower()
@@ -102,7 +102,7 @@ class TestGeminiIntegration:
     def test_gemini_basic_prompt(self):
         """Test basic Gemini prompt with real API."""
         client = create_ai_client("genai", api_key=os.getenv("GOOGLE_API_KEY"))
-        response, duration = client.prompt("gemini-2.0-flash-exp", SIMPLE_PROMPT)
+        response = client.prompt("gemini-2.0-flash-exp", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -116,7 +116,7 @@ class TestGeminiIntegration:
         assert response.usage.output_tokens >= 0
 
         # Verify timing
-        assert duration > 0
+        assert response.duration > 0
 
         # Verify response content
         assert "hello" in response.text.lower() or "working" in response.text.lower()
@@ -135,7 +135,7 @@ class TestMistralIntegration:
     def test_mistral_basic_prompt(self):
         """Test basic Mistral prompt with real API."""
         client = create_ai_client("mistral", api_key=os.getenv("MISTRAL_API_KEY"))
-        response, duration = client.prompt("mistral-small-latest", SIMPLE_PROMPT)
+        response = client.prompt("mistral-small-latest", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -149,7 +149,7 @@ class TestMistralIntegration:
         assert response.usage.output_tokens > 0
 
         # Verify timing
-        assert duration > 0
+        assert response.duration > 0
 
         # Verify response content
         assert "hello" in response.text.lower() or "working" in response.text.lower()
@@ -168,7 +168,7 @@ class TestDeepSeekIntegration:
     def test_deepseek_basic_prompt(self):
         """Test basic DeepSeek prompt with real API."""
         client = create_ai_client("deepseek", api_key=os.getenv("DEEPSEEK_API_KEY"))
-        response, duration = client.prompt("deepseek-chat", SIMPLE_PROMPT)
+        response = client.prompt("deepseek-chat", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -182,7 +182,7 @@ class TestDeepSeekIntegration:
         assert response.usage.output_tokens > 0
 
         # Verify timing
-        assert duration > 0
+        assert response.duration > 0
 
         # Verify response content
         assert "hello" in response.text.lower() or "working" in response.text.lower()
@@ -201,7 +201,7 @@ class TestQwenIntegration:
     def test_qwen_basic_prompt(self):
         """Test basic Qwen prompt with real API."""
         client = create_ai_client("qwen", api_key=os.getenv("QWEN_API_KEY"))
-        response, duration = client.prompt("qwen-turbo", SIMPLE_PROMPT)
+        response = client.prompt("qwen-turbo", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -215,7 +215,7 @@ class TestQwenIntegration:
         assert response.usage.output_tokens > 0
 
         # Verify timing
-        assert duration > 0
+        assert response.duration > 0
 
         # Verify response content
         assert "hello" in response.text.lower() or "working" in response.text.lower()
@@ -239,7 +239,7 @@ class TestOpenRouterIntegration:
             base_url="https://openrouter.ai/api/v1",
         )
         # Use a cheap model available on OpenRouter
-        response, duration = client.prompt("openai/gpt-3.5-turbo", SIMPLE_PROMPT)
+        response = client.prompt("openai/gpt-3.5-turbo", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -252,7 +252,7 @@ class TestOpenRouterIntegration:
         assert response.usage.output_tokens > 0
 
         # Verify timing
-        assert duration > 0
+        assert response.duration > 0
 
         # Verify response content
         assert "hello" in response.text.lower() or "working" in response.text.lower()
@@ -277,7 +277,7 @@ class TestSciCOREIntegration:
         client = create_ai_client(
             "scicore", api_key=os.getenv("SCICORE_API_KEY"), base_url=base_url
         )
-        response, duration = client.prompt(model, SIMPLE_PROMPT)
+        response = client.prompt(model, SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -306,7 +306,7 @@ class TestSciCOREIntegration:
         assert response.usage.output_tokens > 0
 
         # Verify timing
-        assert duration > 0
+        assert response.duration > 0
 
 
 @pytest.mark.integration
@@ -342,12 +342,12 @@ class TestProviderParity:
         results = []
         for provider_id, model, api_key in providers_to_test:
             client = create_ai_client(provider_id, api_key=api_key)
-            response, duration = client.prompt(model, "Reply with just: OK")
+            response = client.prompt(model, "Reply with just: OK")
             results.append(
                 {
                     "provider": provider_id,
                     "success": response.text != "",
-                    "duration": duration,
+                    "duration": response.duration,
                     "tokens": response.usage.total_tokens,
                 }
             )

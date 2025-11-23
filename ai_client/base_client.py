@@ -12,7 +12,12 @@ import time
 import asyncio
 from typing import List, Tuple, Any, Optional
 from .response import LLMResponse, Usage
-from .utils import retry_with_exponential_backoff, is_rate_limit_error
+from .utils import (
+    retry_with_exponential_backoff,
+    is_rate_limit_error,
+    read_text_files,
+    resize_image_if_needed,
+)
 
 
 class BaseAIClient(abc.ABC):
@@ -36,6 +41,8 @@ class BaseAIClient(abc.ABC):
         system_prompt (str): Default system prompt for requests
         settings (dict): Provider-specific settings like temperature, max_tokens, etc.
         base_url (str, optional): Custom base URL for API (e.g., for OpenRouter, sciCORE)
+        max_image_size (int, optional): Maximum image dimension in pixels (None = no resize)
+        image_quality (int): JPEG quality for resized images (1-100, default 85)
     """
 
     PROVIDER_ID = "base"
@@ -46,6 +53,8 @@ class BaseAIClient(abc.ABC):
         api_key: str,
         system_prompt: Optional[str] = None,
         base_url: Optional[str] = None,
+        max_image_size: Optional[int] = 2048,
+        image_quality: int = 85,
         **settings,
     ):
         """
@@ -55,6 +64,8 @@ class BaseAIClient(abc.ABC):
             api_key: API key for authentication with the provider
             system_prompt: System prompt/role description for the AI
             base_url: Custom base URL for API endpoints (provider-specific)
+            max_image_size: Maximum image dimension in pixels (None to disable resize, default 2048)
+            image_quality: JPEG quality for resized images (1-100, default 85)
             **settings: Additional provider-specific settings like temperature, max_tokens, etc.
         """
         self.init_time = time.time()
@@ -64,6 +75,8 @@ class BaseAIClient(abc.ABC):
             system_prompt or "A helpful assistant that provides accurate information."
         )
         self.base_url = base_url
+        self.max_image_size = max_image_size
+        self.image_quality = image_quality
         self.settings = settings
         self.api_client = None
 
@@ -119,10 +132,11 @@ class BaseAIClient(abc.ABC):
         model: str,
         prompt: str,
         images: Optional[List[str]] = None,
+        files: Optional[List[str]] = None,
         system_prompt: Optional[str] = None,
         response_format: Optional[Any] = None,
         **kwargs,
-    ) -> Tuple[LLMResponse, float]:
+    ) -> LLMResponse:
         """
         Send a prompt to the AI model and get the response.
 
@@ -130,6 +144,7 @@ class BaseAIClient(abc.ABC):
             model: The model identifier to use
             prompt: The text prompt to send to the model
             images: Optional list of image paths/URLs to include (if provider supports multimodal)
+            files: Optional list of text file paths to include in the prompt
             system_prompt: Optional system prompt to override the default
             response_format: Optional Pydantic model for structured output
             **kwargs: Additional provider-specific parameters
@@ -138,18 +153,33 @@ class BaseAIClient(abc.ABC):
             Tuple of (LLMResponse object, elapsed_time_in_seconds)
 
         Note:
-            Images are NOT stored statefully. Pass them with each request.
+            Images and files are NOT stored statefully. Pass them with each request.
+            Images will be automatically resized if max_image_size is set.
+            File contents are appended to the prompt with XML-like tags.
         """
         start_time = time.time()
 
         # Use provided system prompt or fall back to default
         sys_prompt = system_prompt or self.system_prompt
 
+        # Handle text files - append to prompt
+        file_list = files or []
+        if file_list:
+            file_content = read_text_files(file_list)
+            prompt = prompt + file_content
+
         # Handle multimodal content
         image_list = images or []
         if image_list and not self.SUPPORTS_MULTIMODAL:
             # Silently ignore images if provider doesn't support them
             image_list = []
+
+        # Resize images if needed
+        if image_list and self.max_image_size:
+            image_list = [
+                resize_image_if_needed(img, self.max_image_size, self.image_quality)
+                for img in image_list
+            ]
 
         # Call provider-specific implementation with retry logic
         try:
@@ -168,7 +198,7 @@ class BaseAIClient(abc.ABC):
         elapsed_time = time.time() - start_time
         response.duration = elapsed_time
 
-        return response, elapsed_time
+        return response
 
     def _do_prompt_with_retry(self, **kwargs) -> LLMResponse:
         """
@@ -218,10 +248,11 @@ class BaseAIClient(abc.ABC):
         model: str,
         prompt: str,
         images: Optional[List[str]] = None,
+        files: Optional[List[str]] = None,
         system_prompt: Optional[str] = None,
         response_format: Optional[Any] = None,
         **kwargs,
-    ) -> Tuple[LLMResponse, float]:
+    ) -> LLMResponse:
         """
         Async version of prompt() for parallel processing.
 
@@ -229,6 +260,7 @@ class BaseAIClient(abc.ABC):
             model: The model identifier to use
             prompt: The text prompt to send
             images: Optional list of image paths/URLs
+            files: Optional list of text file paths to include
             system_prompt: Optional system prompt override
             response_format: Optional Pydantic model for structured output
             **kwargs: Additional provider-specific parameters
@@ -240,7 +272,7 @@ class BaseAIClient(abc.ABC):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None,
-            lambda: self.prompt(model, prompt, images, system_prompt, response_format, **kwargs),
+            lambda: self.prompt(model, prompt, images, files, system_prompt, response_format, **kwargs),
         )
 
     def _create_error_response(self, model: str, error_message: str) -> LLMResponse:
@@ -294,6 +326,8 @@ def create_ai_client(
     api_key: str,
     system_prompt: Optional[str] = None,
     base_url: Optional[str] = None,
+    max_image_size: Optional[int] = 2048,
+    image_quality: int = 85,
     **settings,
 ) -> BaseAIClient:
     """
@@ -304,6 +338,8 @@ def create_ai_client(
         api_key: API key for the provider
         system_prompt: System prompt/role description
         base_url: Custom base URL for API (for OpenRouter, sciCORE, etc.)
+        max_image_size: Maximum image dimension in pixels (None to disable, default 2048)
+        image_quality: JPEG quality for resized images (1-100, default 85)
         **settings: Additional provider-specific settings
 
     Returns:
@@ -317,13 +353,19 @@ def create_ai_client(
         >>> client = create_ai_client('openai', api_key='sk-...')
         >>> response, duration = client.prompt('gpt-4', 'Hello!')
 
-        >>> # With custom base URL (OpenRouter)
-        >>> client = create_ai_client('openrouter', api_key='sk-...',
-        ...                          base_url='https://openrouter.ai/api/v1')
+        >>> # With image auto-resize
+        >>> client = create_ai_client('openai', api_key='sk-...', max_image_size=1024)
+        >>> response, duration = client.prompt('gpt-4o', 'Describe',
+        ...                                    images=['huge_image.jpg'])  # Auto-resized
 
-        >>> # With multimodal content
-        >>> response, duration = client.prompt('gpt-4o', 'Describe this image',
-        ...                                    images=['path/to/image.jpg'])
+        >>> # With text files
+        >>> response, duration = client.prompt('gpt-4', 'Analyze these documents',
+        ...                                    files=['doc1.txt', 'doc2.txt'])
+
+        >>> # With both images and files
+        >>> response, duration = client.prompt('gpt-4o', 'Compare image to description',
+        ...                                    images=['photo.jpg'],
+        ...                                    files=['description.txt'])
     """
     from .openai_client import OpenAIClient
     from .gemini_client import GeminiClient
@@ -335,6 +377,7 @@ def create_ai_client(
     provider_map = {
         "openai": OpenAIClient,
         "genai": GeminiClient,
+        "google": GeminiClient,
         "anthropic": ClaudeClient,
         "mistral": MistralClient,
         "deepseek": DeepSeekClient,
@@ -350,4 +393,4 @@ def create_ai_client(
         )
 
     client_class = provider_map[provider]
-    return client_class(api_key, system_prompt, base_url, **settings)
+    return client_class(api_key, system_prompt, base_url, max_image_size, image_quality, **settings)

@@ -21,11 +21,11 @@ class TestAsyncFunctionality:
             mock_client.chat.completions.create.return_value = mock_openai_response
 
             client = create_ai_client("openai", api_key="test-key")
-            response, duration = await client.prompt_async("gpt-4", "Hello!")
+            response = await client.prompt_async("gpt-4", "Hello!")
 
             assert isinstance(response, LLMResponse)
             assert response.text == "Hello! I'm an AI assistant."
-            assert duration >= 0
+            assert response.duration >= 0
 
     @pytest.mark.asyncio
     async def test_prompt_async_parallel(self, mock_openai_response):
@@ -45,9 +45,9 @@ class TestAsyncFunctionality:
 
             # Check all results
             assert len(results) == 5
-            for response, duration in results:
+            for response in results:
                 assert isinstance(response, LLMResponse)
-                assert duration >= 0
+                assert response.duration >= 0
 
     @pytest.mark.asyncio
     async def test_prompt_async_with_images(self, mock_openai_response, sample_image_path):
@@ -58,7 +58,7 @@ class TestAsyncFunctionality:
             mock_client.chat.completions.create.return_value = mock_openai_response
 
             client = create_ai_client("openai", api_key="test-key")
-            response, duration = await client.prompt_async(
+            response = await client.prompt_async(
                 "gpt-4o", "Describe this", images=[sample_image_path]
             )
 
@@ -73,7 +73,7 @@ class TestAsyncFunctionality:
             mock_client.chat.completions.create.return_value = mock_openai_response
 
             client = create_ai_client("openai", api_key="test-key")
-            response, duration = await client.prompt_async(
+            response = await client.prompt_async(
                 "gpt-4", "Hello", temperature=0.9, max_tokens=100
             )
 
@@ -93,7 +93,7 @@ class TestAsyncFunctionality:
             mock_client.chat.completions.create.side_effect = Exception("API Error")
 
             client = create_ai_client("openai", api_key="test-key")
-            response, duration = await client.prompt_async("gpt-4", "Hello")
+            response = await client.prompt_async("gpt-4", "Hello")
 
             # Should return error response, not raise
             assert isinstance(response, LLMResponse)
@@ -126,5 +126,5 @@ class TestAsyncFunctionality:
                 results.extend(batch_results)
 
             assert len(results) == 10
-            for response, duration in results:
+            for response in results:
                 assert isinstance(response, LLMResponse)

@@ -1,0 +1,445 @@
+{
+  "metadata": {
+    "created": "2025-09-29T14:20:54.795632",
+    "version": "1.3",
+    "last_updated": "2025-10-20T00:00:00.000000"
+  },
+  "pricing": {
+    "2025-10-20": {
+      "openrouter": {
+        "qwen/qwen3-vl-30b-a3b-instruct": {
+          "input_price": 0.2,
+          "output_price": 0.7,
+          "source_url": "https://web.archive.org/save/https://openrouter.ai/qwen/qwen3-vl-30b-a3b-instruct",
+          "added": "2025-10-20"
+        },
+        "qwen/qwen3-vl-8b-instruct": {
+          "input_price": 0.08,
+          "output_price": 0.5,
+          "source_url": "https://web.archive.org/web/20251020124737/https://openrouter.ai/qwen/qwen3-vl-8b-instruct",
+          "added": "2025-10-20"
+        },
+        "x-ai/grok-4": {
+          "input_price": 3.0,
+          "output_price": 15.0,
+          "source_url": "https://web.archive.org/web/20251020213548/https://openrouter.ai/x-ai/grok-4",
+          "added": "2025-10-20"
+        }
+      }
+    },
+    "2025-10-17": {
+      "openrouter": {
+        "qwen/qwen3-vl-8b-thinking": {
+          "input_price": 0.18,
+          "output_price": 2.1,
+          "source_url": "https://web.archive.org/web/20251017115448/https://openrouter.ai/qwen/qwen3-vl-8b-thinking",
+          "added": "2025-10-17"
+        },
+        "meta-llama/llama-4-maverick": {
+          "input_price": 0.15,
+          "output_price": 0.6,
+          "source_url": "https://web.archive.org/web/20251017103315/https://openrouter.ai/meta-llama/llama-4-maverick",
+          "added": "2025-10-17"
+        }
+      },
+      "scicore": {
+        "GLM-4.5V-FP8": {
+          "input_price": 0.0,
+          "output_price": 0.0,
+          "source_url": "https://llm-api-h200.ceda.unibas.ch/litellm",
+          "added": "2025-10-17"
+        }
+      }
+    },
+    "2025-10-01": {
+      "genai": {
+        "gemini-2.0-flash": {
+          "input_price": 0.1,
+          "output_price": 0.4,
+          "source_url": "http://web.archive.org/web/20250929083629/https://ai.google.dev/gemini-api/docs/pricing",
+          "added": "2025-09-29T14:20:56.445152"
+        },
+        "gemini-2.5-pro": {
+          "input_price": 1.25,
+          "output_price": 10.0,
+          "source_url": "http://web.archive.org/web/20250929083629/https://ai.google.dev/gemini-api/docs/pricing",
+          "added": "2025-09-29T21:16:29.013333"
+        },
+        "gemini-2.0-flash-lite": {
+          "input_price": 0.075,
+          "output_price": 0.3,
+          "source_url": "http://web.archive.org/web/20250929083629/https://ai.google.dev/gemini-api/docs/pricing",
+          "added": "2025-09-29T21:26:41.284633"
+        },
+        "gemini-2.5-flash-preview-04-17": {
+          "input_price": 0.3,
+          "output_price": 1.0,
+          "source_url": "http://web.archive.org/web/20250929083629/https://ai.google.dev/gemini-api/docs/pricing",
+          "added": "2025-09-29T21:26:41.284633"
+        },
+        "gemini-2.5-flash": {
+          "input_price": 0.3,
+          "output_price": 2.5,
+          "source_url": "http://web.archive.org/web/20250929083629/https://ai.google.dev/gemini-api/docs/pricing",
+          "added": "2025-09-29T21:56:36.788351"
+        },
+        "gemini-2.5-flash-lite": {
+          "input_price": 0.1,
+          "output_price": 0.4,
+          "source_url": "http://web.archive.org/web/20250929083629/https://ai.google.dev/gemini-api/docs/pricing",
+          "added": "2025-09-29T21:56:36.794538"
+        },
+        "gemini-2.5-flash-lite-preview-09-2025": {
+          "input_price": 0.1,
+          "output_price": 0.4,
+          "source_url": "http://web.archive.org/web/20250929083629/https://ai.google.dev/gemini-api/docs/pricing",
+          "added": "2025-09-29T21:56:36.800204"
+        },
+        "gemini-2.5-flash-preview-09-2025": {
+          "input_price": 0.3,
+          "output_price": 2.5,
+          "source_url": "http://web.archive.org/web/20250929083629/https://ai.google.dev/gemini-api/docs/pricing",
+          "added": "2025-09-29T21:56:36.805770"
+        }
+      },
+      "mistral": {
+        "mistral-medium-2508": {
+          "input_price": 0.4,
+          "output_price": 2.0,
+          "source_url": "http://web.archive.org/web/20250929165930/https://mistral.ai/pricing",
+          "added": "2025-09-29T16:59:30.735933"
+        },
+        "mistral-medium-2505": {
+          "input_price": 0.4,
+          "output_price": 2.0,
+          "source_url": "http://web.archive.org/web/20250929165930/https://mistral.ai/pricing",
+          "added": "2025-09-29T21:26:41.284633"
+        },
+        "pixtral-large-latest": {
+          "input_price": 2.0,
+          "output_price": 6.0,
+          "source_url": "http://web.archive.org/web/20250929165930/https://mistral.ai/pricing",
+          "added": "2025-09-29T21:26:41.284633"
+        },
+        "pixtral-12b": {
+          "input_price": 0.15,
+          "output_price": 0.15,
+          "source_url": "http://web.archive.org/web/20250929165930/https://mistral.ai/pricing",
+          "added": "2025-09-29T21:56:36.776123"
+        },
+        "mistral-large-latest": {
+          "input_price": 2.0,
+          "output_price": 6.0,
+          "source_url": "http://web.archive.org/web/20250929165930/https://mistral.ai/pricing",
+          "added": "2025-09-29T21:56:36.782627"
+        }
+      },
+      "anthropic": {
+        "claude-opus-4-1-20250805": {
+          "input_price": 15.0,
+          "output_price": 75.0,
+          "source_url": "https://web.archive.org/web/20250930014047/https://docs.claude.com/en/docs/about-claude/pricing",
+          "added": "2025-09-29T21:12:42.295010"
+        },
+        "claude-3-5-haiku-20241022": {
+          "input_price": 0.8,
+          "output_price": 4.0,
+          "source_url": "https://web.archive.org/web/20250930014047/https://docs.claude.com/en/docs/about-claude/pricing",
+          "added": "2025-09-29T21:12:42.295010"
+        },
+        "claude-3-5-sonnet-20241022": {
+          "input_price": 3.0,
+          "output_price": 15.0,
+          "source_url": "https://web.archive.org/web/20250930014047/https://docs.claude.com/en/docs/about-claude/pricing",
+          "added": "2025-09-29T21:12:42.295010"
+        },
+        "claude-3-7-sonnet-20250219": {
+          "input_price": 3.0,
+          "output_price": 15.0,
+          "source_url": "https://web.archive.org/web/20250930014047/https://docs.claude.com/en/docs/about-claude/pricing",
+          "added": "2025-09-29T21:12:42.295010"
+        },
+        "claude-3-opus-20240229": {
+          "input_price": 15.0,
+          "output_price": 75.0,
+          "source_url": "https://web.archive.org/web/20250930014047/https://docs.claude.com/en/docs/about-claude/pricing",
+          "added": "2025-09-29T21:12:42.295010"
+        },
+        "claude-opus-4-20250514": {
+          "input_price": 15.0,
+          "output_price": 75.0,
+          "source_url": "https://web.archive.org/web/20250930014047/https://docs.claude.com/en/docs/about-claude/pricing",
+          "added": "2025-09-29T21:12:42.295010"
+        },
+        "claude-sonnet-4-20250514": {
+          "input_price": 3.0,
+          "output_price": 15.0,
+          "source_url": "https://web.archive.org/web/20250930014047/https://docs.claude.com/en/docs/about-claude/pricing",
+          "added": "2025-09-29T21:12:42.295010"
+        },
+        "claude-sonnet-4-5-20250929": {
+          "input_price": 3.0,
+          "output_price": 15.0,
+          "source_url": "https://web.archive.org/web/20250930014047/https://docs.claude.com/en/docs/about-claude/pricing",
+          "added": "2025-09-30"
+        }
+      },
+      "openai": {
+        "gpt-5-mini": {
+          "input_price": 0.25,
+          "output_price": 2.0,
+          "source_url": "http://web.archive.org/web/20250929210424/https://platform.openai.com/docs/pricing",
+          "added": "2025-09-29T21:09:07.468231"
+        },
+        "gpt-4.1": {
+          "input_price": 2.0,
+          "output_price": 8.0,
+          "source_url": "http://web.archive.org/web/20250929210424/https://platform.openai.com/docs/pricing",
+          "added": "2025-09-29T21:09:07.468231"
+        },
+        "gpt-4.1-mini": {
+          "input_price": 0.4,
+          "output_price": 1.6,
+          "source_url": "http://web.archive.org/web/20250929210424/https://platform.openai.com/docs/pricing",
+          "added": "2025-09-29T21:09:07.468231"
+        },
+        "gpt-4.1-nano": {
+          "input_price": 0.1,
+          "output_price": 0.4,
+          "source_url": "http://web.archive.org/web/20250929210424/https://platform.openai.com/docs/pricing",
+          "added": "2025-09-29T21:09:07.468231"
+        },
+        "gpt-4o": {
+          "input_price": 2.5,
+          "output_price": 10.0,
+          "source_url": "http://web.archive.org/web/20250929210424/https://platform.openai.com/docs/pricing",
+          "added": "2025-09-29T21:09:07.468231"
+        },
+        "gpt-4o-mini": {
+          "input_price": 0.15,
+          "output_price": 0.6,
+          "source_url": "http://web.archive.org/web/20250929210424/https://platform.openai.com/docs/pricing",
+          "added": "2025-09-29T21:09:07.468231"
+        },
+        "gpt-5": {
+          "input_price": 1.25,
+          "output_price": 10.0,
+           "source_url": "http://web.archive.org/web/20250929210424/https://platform.openai.com/docs/pricing",
+          "added": "2025-09-29T21:09:07.468231"
+        },
+        "gpt-5-nano": {
+          "input_price": 0.05,
+          "output_price": 0.4,
+          "source_url": "http://web.archive.org/web/20250929210424/https://platform.openai.com/docs/pricing",
+          "added": "2025-09-29T21:09:07.468231"
+        },
+        "o3": {
+          "input_price": 2.0,
+          "output_price": 8.0,
+          "source_url": "http://web.archive.org/web/20250929210424/https://platform.openai.com/docs/pricing",
+          "added": "2025-09-29T21:09:07.468231"
+        }
+      }
+    },
+    "2025-09-30": {
+      "genai": {
+        "gemini-2.0-flash": {
+          "input_price": 0.1,
+          "output_price": 0.4,
+          "source_url": "http://web.archive.org/web/20250929083629/https://ai.google.dev/gemini-api/docs/pricing",
+          "added": "2025-09-29T14:20:56.445152"
+        },
+        "gemini-2.5-pro": {
+          "input_price": 1.25,
+          "output_price": 10.0,
+          "source_url": "http://web.archive.org/web/20250929083629/https://ai.google.dev/gemini-api/docs/pricing",
+          "added": "2025-09-29T21:16:29.013333"
+        },
+        "gemini-2.0-flash-lite": {
+          "input_price": 0.075,
+          "output_price": 0.3,
+          "source_url": "http://web.archive.org/web/20250929083629/https://ai.google.dev/gemini-api/docs/pricing",
+          "added": "2025-09-29T21:26:41.284633"
+        },
+        "gemini-2.5-flash-preview-04-17": {
+          "input_price": 0.3,
+          "output_price": 1.0,
+          "source_url": "http://web.archive.org/web/20250929083629/https://ai.google.dev/gemini-api/docs/pricing",
+          "added": "2025-09-29T21:26:41.284633"
+        },
+        "gemini-2.5-flash": {
+          "input_price": 0.3,
+          "output_price": 2.5,
+          "source_url": "http://web.archive.org/web/20250929083629/https://ai.google.dev/gemini-api/docs/pricing",
+          "added": "2025-09-29T21:56:36.788351"
+        },
+        "gemini-2.5-flash-lite": {
+          "input_price": 0.1,
+          "output_price": 0.4,
+          "source_url": "http://web.archive.org/web/20250929083629/https://ai.google.dev/gemini-api/docs/pricing",
+          "added": "2025-09-29T21:56:36.794538"
+        },
+        "gemini-2.5-flash-lite-preview-09-2025": {
+          "input_price": 0.1,
+          "output_price": 0.4,
+          "source_url": "http://web.archive.org/web/20250929083629/https://ai.google.dev/gemini-api/docs/pricing",
+          "added": "2025-09-29T21:56:36.800204"
+        },
+        "gemini-2.5-flash-preview-09-2025": {
+          "input_price": 0.3,
+          "output_price": 2.5,
+          "source_url": "http://web.archive.org/web/20250929083629/https://ai.google.dev/gemini-api/docs/pricing",
+          "added": "2025-09-29T21:56:36.805770"
+        }
+      },
+      "mistral": {
+        "mistral-medium-2508": {
+          "input_price": 0.4,
+          "output_price": 2.0,
+          "source_url": "http://web.archive.org/web/20250929165930/https://mistral.ai/pricing",
+          "added": "2025-09-29T16:59:30.735933"
+        },
+        "mistral-medium-2505": {
+          "input_price": 0.4,
+          "output_price": 2.0,
+          "source_url": "http://web.archive.org/web/20250929165930/https://mistral.ai/pricing",
+          "added": "2025-09-29T21:26:41.284633"
+        },
+        "pixtral-large-latest": {
+          "input_price": 2.0,
+          "output_price": 6.0,
+          "source_url": "http://web.archive.org/web/20250929165930/https://mistral.ai/pricing",
+          "added": "2025-09-29T21:26:41.284633"
+        },
+        "pixtral-12b": {
+          "input_price": 0.15,
+          "output_price": 0.15,
+          "source_url": "http://web.archive.org/web/20250929165930/https://mistral.ai/pricing",
+          "added": "2025-09-29T21:56:36.776123"
+        },
+        "mistral-large-latest": {
+          "input_price": 2.0,
+          "output_price": 6.0,
+          "source_url": "http://web.archive.org/web/20250929165930/https://mistral.ai/pricing",
+          "added": "2025-09-29T21:56:36.782627"
+        }
+      },
+      "anthropic": {
+        "claude-opus-4-1-20250805": {
+          "input_price": 15.0,
+          "output_price": 75.0,
+          "source_url": "https://web.archive.org/web/20250930014047/https://docs.claude.com/en/docs/about-claude/pricing",
+          "added": "2025-09-29T21:12:42.295010"
+        },
+        "claude-3-5-haiku-20241022": {
+          "input_price": 0.8,
+          "output_price": 4.0,
+          "source_url": "https://web.archive.org/web/20250930014047/https://docs.claude.com/en/docs/about-claude/pricing",
+          "added": "2025-09-29T21:12:42.295010"
+        },
+        "claude-3-5-sonnet-20241022": {
+          "input_price": 3.0,
+          "output_price": 15.0,
+          "source_url": "https://web.archive.org/web/20250930014047/https://docs.claude.com/en/docs/about-claude/pricing",
+          "added": "2025-09-29T21:12:42.295010"
+        },
+        "claude-3-7-sonnet-20250219": {
+          "input_price": 3.0,
+          "output_price": 15.0,
+          "source_url": "https://web.archive.org/web/20250930014047/https://docs.claude.com/en/docs/about-claude/pricing",
+          "added": "2025-09-29T21:12:42.295010"
+        },
+        "claude-3-opus-20240229": {
+          "input_price": 15.0,
+          "output_price": 75.0,
+          "source_url": "https://web.archive.org/web/20250930014047/https://docs.claude.com/en/docs/about-claude/pricing",
+          "added": "2025-09-29T21:12:42.295010"
+        },
+        "claude-opus-4-20250514": {
+          "input_price": 15.0,
+          "output_price": 75.0,
+          "source_url": "https://web.archive.org/web/20250930014047/https://docs.claude.com/en/docs/about-claude/pricing",
+          "added": "2025-09-29T21:12:42.295010"
+        },
+        "claude-sonnet-4-20250514": {
+          "input_price": 3.0,
+          "output_price": 15.0,
+          "source_url": "https://web.archive.org/web/20250930014047/https://docs.claude.com/en/docs/about-claude/pricing",
+          "added": "2025-09-29T21:12:42.295010"
+        },
+        "claude-sonnet-4-5-20250929": {
+          "input_price": 3.0,
+          "output_price": 15.0,
+          "source_url": "https://web.archive.org/web/20250930014047/https://docs.claude.com/en/docs/about-claude/pricing",
+          "added": "2025-09-30"
+        }
+      },
+      "openai": {
+        "gpt-5-mini": {
+          "input_price": 0.25,
+          "output_price": 2.0,
+          "source_url": "http://web.archive.org/web/20250929210424/https://platform.openai.com/docs/pricing",
+          "added": "2025-09-29T21:09:07.468231"
+        },
+        "gpt-4.1": {
+          "input_price": 2.0,
+          "output_price": 8.0,
+          "source_url": "http://web.archive.org/web/20250929210424/https://platform.openai.com/docs/pricing",
+          "added": "2025-09-29T21:09:07.468231"
+        },
+        "gpt-4.1-mini": {
+          "input_price": 0.4,
+          "output_price": 1.6,
+          "source_url": "http://web.archive.org/web/20250929210424/https://platform.openai.com/docs/pricing",
+          "added": "2025-09-29T21:09:07.468231"
+        },
+        "gpt-4.1-nano": {
+          "input_price": 0.1,
+          "output_price": 0.4,
+          "source_url": "http://web.archive.org/web/20250929210424/https://platform.openai.com/docs/pricing",
+          "added": "2025-09-29T21:09:07.468231"
+        },
+        "gpt-4o": {
+          "input_price": 2.5,
+          "output_price": 10.0,
+          "source_url": "http://web.archive.org/web/20250929210424/https://platform.openai.com/docs/pricing",
+          "added": "2025-09-29T21:09:07.468231"
+        },
+        "gpt-4o-mini": {
+          "input_price": 0.15,
+          "output_price": 0.6,
+          "source_url": "http://web.archive.org/web/20250929210424/https://platform.openai.com/docs/pricing",
+          "added": "2025-09-29T21:09:07.468231"
+        },
+        "gpt-5": {
+          "input_price": 1.25,
+          "output_price": 10.0,
+          "source_url": "http://web.archive.org/web/20250929210424/https://platform.openai.com/docs/pricing",
+          "added": "2025-09-29T21:09:07.468231"
+        },
+        "gpt-5-nano": {
+          "input_price": 0.05,
+          "output_price": 0.4,
+          "source_url": "http://web.archive.org/web/20250929210424/https://platform.openai.com/docs/pricing",
+          "added": "2025-09-29T21:09:07.468231"
+        },
+        "o3": {
+          "input_price": 2.0,
+          "output_price": 8.0,
+          "source_url": "http://web.archive.org/web/20250929210424/https://platform.openai.com/docs/pricing",
+          "added": "2025-09-29T21:09:07.468231"
+        }
+      }
+    },
+    "2025-09-24": {
+      "genai": {
+        "gemini-2.0-flash": {
+          "input_price": 0.1,
+          "output_price": 0.4,
+          "source_url": "http://web.archive.org/web/20250923111058/https://ai.google.dev/gemini-api/docs/pricing",
+          "added": "2025-09-29T14:28:43.690951"
+        }
+      }
+    }
+  }
+}

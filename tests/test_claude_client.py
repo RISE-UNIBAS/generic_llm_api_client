@@ -30,7 +30,7 @@ class TestClaudeClient:
             mock_client.messages.create.return_value = mock_claude_response
 
             client = create_ai_client("anthropic", api_key="test-key")
-            response, duration = client.prompt("claude-3-5-sonnet-20241022", "Hello!")
+            response = client.prompt("claude-3-5-sonnet-20241022", "Hello!")
 
             # Check response
             assert isinstance(response, LLMResponse)
@@ -39,7 +39,7 @@ class TestClaudeClient:
             assert response.finish_reason == "end_turn"
             assert response.usage.input_tokens == 15
             assert response.usage.output_tokens == 25
-            assert duration >= 0
+            assert response.duration >= 0
 
             # Check API call
             mock_client.messages.create.assert_called_once()
@@ -56,7 +56,7 @@ class TestClaudeClient:
             mock_client.messages.create.return_value = mock_claude_response
 
             client = create_ai_client("anthropic", api_key="test-key")
-            response, duration = client.prompt(
+            response = client.prompt(
                 "claude-3-5-sonnet-20241022", "Describe this image", images=[sample_image_path]
             )
 
@@ -90,7 +90,7 @@ class TestClaudeClient:
             mock_client.messages.create.return_value = mock_response
 
             client = create_ai_client("anthropic", api_key="test-key")
-            response, duration = client.prompt(
+            response = client.prompt(
                 "claude-3-5-sonnet-20241022", "Extract data", response_format=mock_pydantic_model
             )
 
@@ -104,6 +104,12 @@ class TestClaudeClient:
             data = json.loads(response.text)
             assert data["name"] == "test"
             assert data["value"] == 42
+
+            # Check that parsed field is populated
+            assert response.parsed is not None
+            assert isinstance(response.parsed, dict)
+            assert response.parsed["name"] == "test"
+            assert response.parsed["value"] == 42
 
     def test_max_tokens_varies_by_model(self):
         """Test that max_tokens defaults vary by model."""

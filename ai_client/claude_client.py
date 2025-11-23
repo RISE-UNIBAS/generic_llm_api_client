@@ -16,6 +16,7 @@ from anthropic import Anthropic
 
 from .base_client import BaseAIClient
 from .response import LLMResponse, Usage
+from .pricing import calculate_cost
 
 logger = logging.getLogger(__name__)
 
@@ -193,16 +194,19 @@ class ClaudeClient(BaseAIClient):
         """
         # Extract tool use from response
         text = ""
+        parsed_data = None
         for block in raw_response.content:
             if block.type == "tool_use" and block.name == "extract_structured_data":
                 try:
                     # Validate with Pydantic and convert to JSON
                     structured = response_format(**block.input)
                     text = structured.model_dump_json()
+                    parsed_data = block.input  # Store the parsed dict
                 except Exception as e:
                     logger.warning(f"Pydantic validation failed: {e}")
                     # Use raw tool input without validation
                     text = json.dumps(block.input)
+                    parsed_data = block.input  # Still store it as parsed
                 break
             elif block.type == "text":
                 text = block.text
@@ -214,6 +218,15 @@ class ClaudeClient(BaseAIClient):
                 output_tokens=raw_response.usage.output_tokens,
                 total_tokens=raw_response.usage.input_tokens + raw_response.usage.output_tokens,
             )
+            # Calculate cost if pricing data is available
+            costs = calculate_cost(
+                self.PROVIDER_ID,
+                model,
+                usage.input_tokens,
+                usage.output_tokens,
+            )
+            if costs is not None:
+                usage.input_cost_usd, usage.output_cost_usd, usage.estimated_cost_usd = costs
 
         return LLMResponse(
             text=text,
@@ -222,6 +235,7 @@ class ClaudeClient(BaseAIClient):
             finish_reason=raw_response.stop_reason or "unknown",
             usage=usage,
             raw_response=raw_response,
+            parsed=parsed_data,
         )
 
     def _create_response_from_raw(self, raw_response: Any, model: str) -> LLMResponse:
@@ -250,6 +264,15 @@ class ClaudeClient(BaseAIClient):
                 output_tokens=raw_response.usage.output_tokens,
                 total_tokens=raw_response.usage.input_tokens + raw_response.usage.output_tokens,
             )
+            # Calculate cost if pricing data is available
+            costs = calculate_cost(
+                self.PROVIDER_ID,
+                model,
+                usage.input_tokens,
+                usage.output_tokens,
+            )
+            if costs is not None:
+                usage.input_cost_usd, usage.output_cost_usd, usage.estimated_cost_usd = costs
 
         return LLMResponse(
             text=text,

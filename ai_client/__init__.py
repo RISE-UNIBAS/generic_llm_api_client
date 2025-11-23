@@ -31,15 +31,18 @@ from .mistral_client import MistralClient
 from .deepseek_client import DeepSeekClient
 from .qwen_client import QwenClient
 from .response import LLMResponse, Usage
+from .pricing import set_pricing_file
 from .utils import (
     retry_with_exponential_backoff,
     is_rate_limit_error,
     detect_image_mime_type,
+    read_text_files,
+    resize_image_if_needed,
     RateLimitError,
     APIError,
 )
 
-__version__ = "0.1.2"
+__version__ = "0.2.0"
 
 __all__ = [
     # Core classes
@@ -55,10 +58,14 @@ __all__ = [
     # Response and utility classes
     "LLMResponse",
     "Usage",
+    # Pricing
+    "set_pricing_file",
     # Utility functions and exceptions
     "retry_with_exponential_backoff",
     "is_rate_limit_error",
     "detect_image_mime_type",
+    "read_text_files",
+    "resize_image_if_needed",
     "RateLimitError",
     "APIError",
     # Version

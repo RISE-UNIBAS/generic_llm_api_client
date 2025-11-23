@@ -11,10 +11,10 @@ from ai_client import create_ai_client
 client = create_ai_client('openai', api_key='sk-...')
 
 # Send a prompt
-response, duration = client.prompt('gpt-4', 'What is 2+2?')
+response = client.prompt('gpt-4', 'What is 2+2?')
 
 print(f"Response: {response.text}")
-print(f"Took: {duration:.2f}s")
+print(f"Took: {response.duration:.2f}s")
 print(f"Tokens used: {response.usage.total_tokens}")
 ```
 
@@ -23,7 +23,7 @@ print(f"Tokens used: {response.usage.total_tokens}")
 ```python
 client = create_ai_client('openai', api_key='sk-...')
 
-response, duration = client.prompt(
+response = client.prompt(
     'gpt-4o',
     'Describe this image in detail',
     images=['path/to/image.jpg']
@@ -35,7 +35,7 @@ print(response.text)
 ### Multiple Images
 
 ```python
-response, duration = client.prompt(
+response = client.prompt(
     'gpt-4o',
     'Compare these two images',
     images=['image1.jpg', 'image2.jpg']
@@ -48,7 +48,7 @@ response, duration = client.prompt(
 
 ```python
 client = create_ai_client('openai', api_key='sk-...')
-response, _ = client.prompt(
+response = client.prompt(
     'gpt-4-turbo',
     'Explain quantum computing',
     temperature=0.7,
@@ -60,7 +60,7 @@ response, _ = client.prompt(
 
 ```python
 client = create_ai_client('anthropic', api_key='sk-ant-...')
-response, _ = client.prompt(
+response = client.prompt(
     'claude-3-5-sonnet-20241022',
     'Write a poem about code',
     temperature=1.0,
@@ -72,7 +72,7 @@ response, _ = client.prompt(
 
 ```python
 client = create_ai_client('genai', api_key='...')
-response, _ = client.prompt(
+response = client.prompt(
     'gemini-2.0-flash-exp',
     'Explain machine learning',
     temperature=0.5
@@ -83,7 +83,7 @@ response, _ = client.prompt(
 
 ```python
 client = create_ai_client('mistral', api_key='...')
-response, _ = client.prompt(
+response = client.prompt(
     'mistral-large-latest',
     'Summarize this text...'
 )
@@ -102,7 +102,7 @@ client = create_ai_client(
     }
 )
 
-response, _ = client.prompt(
+response = client.prompt(
     'anthropic/claude-3-opus',  # Use any model via OpenRouter
     'Hello!'
 )
@@ -117,7 +117,7 @@ client = create_ai_client(
     base_url='https://llm-api-h200.ceda.unibas.ch/litellm/v1'
 )
 
-response, _ = client.prompt('deepseek/deepseek-chat', 'Hello!')
+response = client.prompt('deepseek/deepseek-chat', 'Hello!')
 ```
 
 ## Structured Output (Pydantic)
@@ -135,7 +135,7 @@ class Person(BaseModel):
 
 client = create_ai_client('openai', api_key='sk-...')
 
-response, _ = client.prompt(
+response = client.prompt(
     'gpt-4',
     'Extract: John Smith is a 35-year-old software engineer',
     response_format=Person
@@ -168,7 +168,7 @@ class ResearchPaper(BaseModel):
 
 client = create_ai_client('anthropic', api_key='sk-ant-...')
 
-response, _ = client.prompt(
+response = client.prompt(
     'claude-3-5-sonnet-20241022',
     'Extract structured data from this paper abstract: ...',
     response_format=ResearchPaper
@@ -198,8 +198,8 @@ async def main():
     # Run them all concurrently
     results = await asyncio.gather(*tasks)
 
-    for i, (response, duration) in enumerate(results):
-        print(f"\n=== Result {i+1} ({duration:.2f}s) ===")
+    for i, response in enumerate(results):
+        print(f"\n=== Result {i+1} ({response.duration:.2f}s) ===")
         print(response.text[:200])
 
 asyncio.run(main())
@@ -214,7 +214,7 @@ from ai_client import create_ai_client
 
 async def process_image(client, image_path, prompt):
     """Process a single image."""
-    response, duration = await client.prompt_async(
+    response = await client.prompt_async(
         'gpt-4o',
         prompt,
         images=[image_path]
@@ -222,7 +222,6 @@ async def process_image(client, image_path, prompt):
     return {
         'image': os.path.basename(image_path),
         'response': response.text,
-        'duration': duration,
         'tokens': response.usage.total_tokens
     }
 
@@ -269,7 +268,7 @@ results = asyncio.run(benchmark_images())
 ### Extract Detailed Usage Information
 
 ```python
-response, duration = client.prompt('gpt-4', 'Hello')
+response = client.prompt('gpt-4', 'Hello')
 
 print("=== Response Metadata ===")
 print(f"Model: {response.model}")
@@ -295,7 +294,7 @@ if response.usage.estimated_cost_usd:
 ```python
 import json
 
-response, duration = client.prompt('gpt-4', 'Hello')
+response = client.prompt('gpt-4', 'Hello')
 
 # Convert to dict (excludes non-JSON-serializable raw_response)
 response_dict = response.to_dict()
@@ -319,7 +318,7 @@ from ai_client import create_ai_client
 client = create_ai_client('openai', api_key='sk-...')
 
 try:
-    response, duration = client.prompt('gpt-4', 'Hello')
+    response = client.prompt('gpt-4', 'Hello')
     # Will automatically retry up to 3 times on rate limit errors
 except Exception as e:
     print(f"Failed after retries: {e}")
@@ -333,7 +332,7 @@ from ai_client import create_ai_client, RateLimitError, APIError
 client = create_ai_client('openai', api_key='sk-...')
 
 try:
-    response, duration = client.prompt('gpt-4', 'Hello')
+    response = client.prompt('gpt-4', 'Hello')
 except RateLimitError as e:
     print(f"Rate limited: {e}")
 except APIError as e:
@@ -360,7 +359,7 @@ prompts = [
 ]
 
 for prompt_text in prompts:
-    response, _ = client.prompt('gpt-4', prompt_text)
+    response = client.prompt('gpt-4', prompt_text)
 
     total_input_tokens += response.usage.input_tokens
     total_output_tokens += response.usage.output_tokens
@@ -384,10 +383,10 @@ client = create_ai_client(
 )
 
 # Uses the default system prompt
-response, _ = client.prompt('gpt-4', 'How do I read a file?')
+response = client.prompt('gpt-4', 'How do I read a file?')
 
 # Override for specific request
-response, _ = client.prompt(
+response = client.prompt(
     'gpt-4',
     'Write a haiku about code',
     system_prompt="You are a poetic assistant."
@@ -411,10 +410,10 @@ prompt = 'Explain quantum entanglement in simple terms'
 for provider, model in providers:
     client = create_ai_client(provider, api_key=f'{provider}_key')
 
-    response, duration = client.prompt(model, prompt)
+    response = client.prompt(model, prompt)
 
     print(f"\n=== {provider}/{model} ===")
-    print(f"Duration: {duration:.2f}s")
+    print(f"Duration: {response.duration:.2f}s")
     print(f"Tokens: {response.usage.total_tokens}")
     print(f"Response: {response.text[:200]}...")
 ```
