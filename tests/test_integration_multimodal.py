@@ -97,9 +97,7 @@ class TestGeminiVision:
     def test_gemini_vision_with_image(self, sample_image_path):
         """Test Gemini vision model with image."""
         client = create_ai_client("genai", api_key=os.getenv("GOOGLE_API_KEY"))
-        response = client.prompt(
-            "gemini-2.0-flash-exp", VISION_PROMPT, images=[sample_image_path]
-        )
+        response = client.prompt("gemini-2.0-flash-exp", VISION_PROMPT, images=[sample_image_path])
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -125,9 +123,7 @@ class TestMistralVision:
     def test_mistral_vision_with_image(self, sample_image_path):
         """Test Mistral vision model with image."""
         client = create_ai_client("mistral", api_key=os.getenv("MISTRAL_API_KEY"))
-        response = client.prompt(
-            "pixtral-12b-2409", VISION_PROMPT, images=[sample_image_path]
-        )
+        response = client.prompt("pixtral-12b-2409", VISION_PROMPT, images=[sample_image_path])
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -161,9 +157,7 @@ class TestDeepSeekVision:
 
         # Note: Check if DeepSeek has vision models available
         # Using deepseek-chat as it may support vision
-        response = client.prompt(
-            "deepseek-chat", VISION_PROMPT, images=[sample_image_path]
-        )
+        response = client.prompt("deepseek-chat", VISION_PROMPT, images=[sample_image_path])
 
         # Verify response structure
         assert isinstance(response, LLMResponse)

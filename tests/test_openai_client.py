@@ -68,9 +68,7 @@ class TestOpenAIClient:
             mock_client.chat.completions.create.return_value = mock_openai_response
 
             client = create_ai_client("openai", api_key="test-key")
-            response = client.prompt(
-                "gpt-4o", "Describe this image", images=[sample_image_path]
-            )
+            response = client.prompt("gpt-4o", "Describe this image", images=[sample_image_path])
 
             assert isinstance(response, LLMResponse)
 
@@ -115,9 +113,7 @@ class TestOpenAIClient:
             mock_client.beta.chat.completions.parse.return_value = mock_response
 
             client = create_ai_client("openai", api_key="test-key")
-            response = client.prompt(
-                "gpt-4", "Extract data", response_format=mock_pydantic_model
-            )
+            response = client.prompt("gpt-4", "Extract data", response_format=mock_pydantic_model)
 
             # Check that structured output was used
             mock_client.beta.chat.completions.parse.assert_called_once()

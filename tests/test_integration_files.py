@@ -135,8 +135,12 @@ class TestOpenAIWithFiles:
 
         # Should mention AI/ML topics
         text_lower = response.text.lower()
-        assert ("ai" in text_lower or "machine learning" in text_lower or
-                "neural" in text_lower or "deep learning" in text_lower)
+        assert (
+            "ai" in text_lower
+            or "machine learning" in text_lower
+            or "neural" in text_lower
+            or "deep learning" in text_lower
+        )
 
         print(f"\nOpenAI multiple files: {response.text}")
 

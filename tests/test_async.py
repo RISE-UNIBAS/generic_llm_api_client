@@ -73,9 +73,7 @@ class TestAsyncFunctionality:
             mock_client.chat.completions.create.return_value = mock_openai_response
 
             client = create_ai_client("openai", api_key="test-key")
-            response = await client.prompt_async(
-                "gpt-4", "Hello", temperature=0.9, max_tokens=100
-            )
+            response = await client.prompt_async("gpt-4", "Hello", temperature=0.9, max_tokens=100)
 
             assert isinstance(response, LLMResponse)
 

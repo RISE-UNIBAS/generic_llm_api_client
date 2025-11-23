@@ -26,7 +26,7 @@ class TestReadTextFiles:
 
         result = read_text_files([str(file_path)])
 
-        assert "<file name=\"test.txt\">" in result
+        assert '<file name="test.txt">' in result
         assert "Hello, world!" in result
         assert "</file>" in result
 
@@ -201,15 +201,11 @@ class TestClientWithFiles:
         mock_response.model = "gpt-4"
 
         mocker.patch.object(
-            client.api_client.chat.completions,
-            "create",
-            return_value=mock_response
+            client.api_client.chat.completions, "create", return_value=mock_response
         )
 
         # Call prompt with files
-        response = client.prompt(
-            "gpt-4", "Analyze this document", files=[str(file_path)]
-        )
+        response = client.prompt("gpt-4", "Analyze this document", files=[str(file_path)])
 
         # Verify the API was called with modified prompt
         call_args = client.api_client.chat.completions.create.call_args
@@ -225,7 +221,7 @@ class TestClientWithFiles:
             user_text = user_message
 
         # The user message should contain the file content
-        assert "<file name=\"test.txt\">" in user_text
+        assert '<file name="test.txt">' in user_text
         assert "Test content" in user_text
         assert "</file>" in user_text
 
@@ -251,15 +247,11 @@ class TestClientWithFiles:
         mock_response.model = "gpt-4"
 
         mocker.patch.object(
-            client.api_client.chat.completions,
-            "create",
-            return_value=mock_response
+            client.api_client.chat.completions, "create", return_value=mock_response
         )
 
         # Call prompt with multiple files
-        response = client.prompt(
-            "gpt-4", "Compare documents", files=[str(file1), str(file2)]
-        )
+        response = client.prompt("gpt-4", "Compare documents", files=[str(file1), str(file2)])
 
         # Verify both files are in the prompt
         call_args = client.api_client.chat.completions.create.call_args
@@ -301,9 +293,7 @@ class TestClientWithFiles:
         mock_response.model = "gpt-4o"
 
         mocker.patch.object(
-            client.api_client.chat.completions,
-            "create",
-            return_value=mock_response
+            client.api_client.chat.completions, "create", return_value=mock_response
         )
 
         # Call prompt with both files and images
@@ -361,15 +351,11 @@ class TestClientWithImageResize:
         mock_response.model = "gpt-4o"
 
         mocker.patch.object(
-            client.api_client.chat.completions,
-            "create",
-            return_value=mock_response
+            client.api_client.chat.completions, "create", return_value=mock_response
         )
 
         # Call prompt with large image
-        response = client.prompt(
-            "gpt-4o", "Describe this image", images=[str(img_path)]
-        )
+        response = client.prompt("gpt-4o", "Describe this image", images=[str(img_path)])
 
         # Verify the API was called (image was processed)
         assert client.api_client.chat.completions.create.called
@@ -396,15 +382,11 @@ class TestClientWithImageResize:
         mock_response.model = "gpt-4o"
 
         mocker.patch.object(
-            client.api_client.chat.completions,
-            "create",
-            return_value=mock_response
+            client.api_client.chat.completions, "create", return_value=mock_response
         )
 
         # Call prompt with large image
-        response = client.prompt(
-            "gpt-4o", "Describe this image", images=[str(img_path)]
-        )
+        response = client.prompt("gpt-4o", "Describe this image", images=[str(img_path)])
 
         # Verify the API was called (no resize occurred, but still works)
         assert client.api_client.chat.completions.create.called
