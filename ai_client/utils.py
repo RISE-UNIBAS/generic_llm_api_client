@@ -271,7 +271,9 @@ def resize_image_if_needed(
         return temp_file.name
 
     except ImportError:
-        logger.warning("Pillow not installed - cannot resize images. Install with: pip install Pillow")
+        logger.warning(
+            "Pillow not installed - cannot resize images. Install with: pip install Pillow"
+        )
         return image_path
     except Exception as e:
         logger.warning(f"Failed to resize image {image_path}: {e}. Using original.")

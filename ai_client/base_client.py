@@ -272,7 +272,9 @@ class BaseAIClient(abc.ABC):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None,
-            lambda: self.prompt(model, prompt, images, files, system_prompt, response_format, **kwargs),
+            lambda: self.prompt(
+                model, prompt, images, files, system_prompt, response_format, **kwargs
+            ),
         )
 
     def _create_error_response(self, model: str, error_message: str) -> LLMResponse:

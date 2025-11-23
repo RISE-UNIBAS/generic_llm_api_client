@@ -59,9 +59,7 @@ class PricingManager:
             logger.error(f"Error loading pricing data: {e}")
             self.pricing_data = {}
 
-    def get_model_pricing(
-        self, provider: str, model: str
-    ) -> Optional[Tuple[float, float]]:
+    def get_model_pricing(self, provider: str, model: str) -> Optional[Tuple[float, float]]:
         """
         Get pricing information for a specific model.
 
