@@ -71,13 +71,16 @@ class PricingManager:
             Tuple of (input_price_per_million, output_price_per_million) or None
             if pricing is not available
         """
+        logger.debug(f"Looking up pricing for provider='{provider}', model='{model}'")
+
         if not self.pricing_data or "pricing" not in self.pricing_data:
+            logger.debug("No pricing data available")
             return None
 
         # Get all dates and sort them in descending order (most recent first)
         dates = sorted(self.pricing_data["pricing"].keys(), reverse=True)
 
-        # Search through dates to find the model pricing
+        # Try exact match first
         for date in dates:
             date_pricing = self.pricing_data["pricing"][date]
             if provider in date_pricing:
@@ -86,9 +89,30 @@ class PricingManager:
                     model_info = provider_pricing[model]
                     input_price = model_info.get("input_price", 0.0)
                     output_price = model_info.get("output_price", 0.0)
+                    logger.debug(f"Found pricing (exact match): input=${input_price}, output=${output_price}")
                     return (input_price, output_price)
 
+        # If no exact match, try stripping date suffixes
+        # Pattern: model-YYYY-MM-DD or model-YYYYMMDD
+        import re
+        base_model = re.sub(r'-\d{4}-\d{2}-\d{2}$', '', model)  # Remove -YYYY-MM-DD
+        base_model = re.sub(r'-\d{8}$', '', base_model)  # Remove -YYYYMMDD
+
+        if base_model != model:
+            logger.debug(f"Trying base model: '{base_model}'")
+            for date in dates:
+                date_pricing = self.pricing_data["pricing"][date]
+                if provider in date_pricing:
+                    provider_pricing = date_pricing[provider]
+                    if base_model in provider_pricing:
+                        model_info = provider_pricing[base_model]
+                        input_price = model_info.get("input_price", 0.0)
+                        output_price = model_info.get("output_price", 0.0)
+                        logger.debug(f"Found pricing (base model match): input=${input_price}, output=${output_price}")
+                        return (input_price, output_price)
+
         # Not found
+        logger.warning(f"No pricing found for provider='{provider}', model='{model}' or base model '{base_model}'")
         return None
 
     def calculate_cost(
