@@ -89,14 +89,17 @@ class PricingManager:
                     model_info = provider_pricing[model]
                     input_price = model_info.get("input_price", 0.0)
                     output_price = model_info.get("output_price", 0.0)
-                    logger.debug(f"Found pricing (exact match): input=${input_price}, output=${output_price}")
+                    logger.debug(
+                        f"Found pricing (exact match): input=${input_price}, output=${output_price}"
+                    )
                     return (input_price, output_price)
 
         # If no exact match, try stripping date suffixes
         # Pattern: model-YYYY-MM-DD or model-YYYYMMDD
         import re
-        base_model = re.sub(r'-\d{4}-\d{2}-\d{2}$', '', model)  # Remove -YYYY-MM-DD
-        base_model = re.sub(r'-\d{8}$', '', base_model)  # Remove -YYYYMMDD
+
+        base_model = re.sub(r"-\d{4}-\d{2}-\d{2}$", "", model)  # Remove -YYYY-MM-DD
+        base_model = re.sub(r"-\d{8}$", "", base_model)  # Remove -YYYYMMDD
 
         if base_model != model:
             logger.debug(f"Trying base model: '{base_model}'")
@@ -108,11 +111,15 @@ class PricingManager:
                         model_info = provider_pricing[base_model]
                         input_price = model_info.get("input_price", 0.0)
                         output_price = model_info.get("output_price", 0.0)
-                        logger.debug(f"Found pricing (base model match): input=${input_price}, output=${output_price}")
+                        logger.debug(
+                            f"Found pricing (base model match): input=${input_price}, output=${output_price}"
+                        )
                         return (input_price, output_price)
 
         # Not found
-        logger.warning(f"No pricing found for provider='{provider}', model='{model}' or base model '{base_model}'")
+        logger.warning(
+            f"No pricing found for provider='{provider}', model='{model}' or base model '{base_model}'"
+        )
         return None
 
     def calculate_cost(
