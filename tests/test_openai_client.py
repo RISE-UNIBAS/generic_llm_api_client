@@ -24,7 +24,7 @@ class TestOpenAIClient:
     def test_openai_client_with_base_url(self):
         """Test OpenAI client with custom base URL."""
         with patch("ai_client.openai_client.OpenAI") as mock_openai:
-            client = create_ai_client(
+            create_ai_client(
                 "openai", api_key="test-key", base_url="https://custom.api.com"
             )
 
@@ -86,7 +86,7 @@ class TestOpenAIClient:
             mock_client.chat.completions.create.return_value = mock_openai_response
 
             client = create_ai_client("openai", api_key="test-key")
-            response = client.prompt("gpt-4", "Hello", temperature=0.9)
+            client.prompt("gpt-4", "Hello", temperature=0.9)
 
             call_args = mock_client.chat.completions.create.call_args
             assert call_args.kwargs["temperature"] == 0.9

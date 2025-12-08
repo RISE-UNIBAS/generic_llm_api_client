@@ -399,7 +399,7 @@ class TestBenchmarkStructuredWorkflow:
         total_duration = sum(r["duration"] for r in results)
         total_tokens = sum(r["tokens"] for r in results)
 
-        print(f"\nStructured benchmark results:")
+        print("\nStructured benchmark results:")
         print(f"  Total duration: {total_duration:.2f}s")
         print(f"  Total tokens: {total_tokens}")
         for r in results:

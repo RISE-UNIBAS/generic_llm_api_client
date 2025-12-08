@@ -219,7 +219,7 @@ class TestCohereClient:
             mock_client.chat.return_value = mock_cohere_response
 
             client = create_ai_client("cohere", api_key="test-key")
-            response = client.prompt("command-r", "Hello!", temperature=0.7, max_tokens=100)
+            client.prompt("command-r", "Hello!", temperature=0.7, max_tokens=100)
 
             # Verify chat was called
             assert mock_client.chat.called

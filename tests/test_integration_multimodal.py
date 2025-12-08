@@ -327,7 +327,7 @@ class TestVisionBenchmarkWorkflow:
         total_duration = sum(r["duration"] for r in results)
         total_tokens = sum(r["tokens"] for r in results)
 
-        print(f"\nBenchmark simulation results:")
+        print("\nBenchmark simulation results:")
         print(f"  Total duration: {total_duration:.2f}s")
         print(f"  Total tokens: {total_tokens}")
         print(f"  Average per image: {total_duration/3:.2f}s, {total_tokens/3:.0f} tokens")
