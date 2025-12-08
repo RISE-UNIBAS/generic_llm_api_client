@@ -2,7 +2,6 @@
 Tests for Claude client implementation.
 """
 
-import pytest
 import json
 from unittest.mock import Mock, patch
 from ai_client import create_ai_client, ClaudeClient

@@ -9,8 +9,6 @@ These tests verify that:
 """
 
 import os
-import tempfile
-import pytest
 from PIL import Image
 from ai_client.utils import read_text_files, resize_image_if_needed
 from ai_client import create_ai_client

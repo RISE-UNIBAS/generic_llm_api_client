@@ -3,8 +3,8 @@ Tests for BaseAIClient and create_ai_client factory.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from ai_client.base_client import create_ai_client, BaseAIClient
+from unittest.mock import patch
+from ai_client.base_client import create_ai_client
 from ai_client import (
     OpenAIClient,
     ClaudeClient,

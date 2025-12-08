@@ -9,7 +9,6 @@ Set API keys in .env file (see .env.example for template).
 
 import os
 import json
-import tempfile
 import pytest
 from PIL import Image, ImageDraw
 from pydantic import BaseModel, Field

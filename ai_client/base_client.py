@@ -14,7 +14,6 @@ from typing import List, Tuple, Any, Optional
 from .response import LLMResponse, Usage
 from .utils import (
     retry_with_exponential_backoff,
-    is_rate_limit_error,
     read_text_files,
     resize_image_if_needed,
 )

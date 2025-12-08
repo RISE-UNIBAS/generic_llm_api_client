@@ -2,9 +2,8 @@
 Tests for OpenAI client implementation.
 """
 
-import pytest
 import json
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from ai_client import create_ai_client, OpenAIClient
 from ai_client.response import LLMResponse
 

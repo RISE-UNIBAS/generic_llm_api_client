@@ -2,7 +2,6 @@
 Tests for Gemini, Mistral, Cohere, DeepSeek, and Qwen clients.
 """
 
-import pytest
 from unittest.mock import Mock, patch
 from ai_client import (
     create_ai_client,

@@ -2,7 +2,6 @@
 Tests for response dataclasses (LLMResponse, Usage).
 """
 
-import pytest
 from datetime import datetime
 from ai_client.response import Usage, LLMResponse
 

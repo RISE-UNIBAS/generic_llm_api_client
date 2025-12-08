@@ -7,7 +7,6 @@ to automatically calculate estimated costs for API requests.
 
 import json
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 

@@ -3,8 +3,7 @@ Shared test fixtures and configuration for pytest.
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock
-from datetime import datetime
+from unittest.mock import Mock
 
 
 @pytest.fixture
