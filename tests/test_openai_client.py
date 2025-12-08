@@ -24,9 +24,7 @@ class TestOpenAIClient:
     def test_openai_client_with_base_url(self):
         """Test OpenAI client with custom base URL."""
         with patch("ai_client.openai_client.OpenAI") as mock_openai:
-            create_ai_client(
-                "openai", api_key="test-key", base_url="https://custom.api.com"
-            )
+            create_ai_client("openai", api_key="test-key", base_url="https://custom.api.com")
 
             mock_openai.assert_called_once_with(
                 api_key="test-key", base_url="https://custom.api.com"
