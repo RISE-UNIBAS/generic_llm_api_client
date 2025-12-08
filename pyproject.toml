@@ -25,6 +25,7 @@ keywords = [
     "mistral",
     "deepseek",
     "qwen",
+    "cohere",
     "api-client",
     "humanities",
     "research",
@@ -48,6 +49,7 @@ dependencies = [
     "openai~=2.6.1",
     "mistralai~=1.9.11",
     "google-genai~=1.46.0",
+    "cohere~=5.0.0",
     "requests~=2.32.5",
 ]
 

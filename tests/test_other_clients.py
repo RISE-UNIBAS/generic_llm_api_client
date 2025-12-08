@@ -4,7 +4,14 @@ Tests for Gemini, Mistral, Cohere, DeepSeek, and Qwen clients.
 
 import pytest
 from unittest.mock import Mock, patch
-from ai_client import create_ai_client, GeminiClient, MistralClient, CohereClient, DeepSeekClient, QwenClient
+from ai_client import (
+    create_ai_client,
+    GeminiClient,
+    MistralClient,
+    CohereClient,
+    DeepSeekClient,
+    QwenClient,
+)
 from ai_client.response import LLMResponse
 
 
@@ -213,12 +220,7 @@ class TestCohereClient:
             mock_client.chat.return_value = mock_cohere_response
 
             client = create_ai_client("cohere", api_key="test-key")
-            response = client.prompt(
-                "command-r",
-                "Hello!",
-                temperature=0.7,
-                max_tokens=100
-            )
+            response = client.prompt("command-r", "Hello!", temperature=0.7, max_tokens=100)
 
             # Verify chat was called
             assert mock_client.chat.called

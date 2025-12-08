@@ -154,7 +154,9 @@ class TestCohereVision:
     def test_cohere_vision_with_image(self, sample_image_path):
         """Test Cohere vision model with image."""
         client = create_ai_client("cohere", api_key=os.getenv("COHERE_API_KEY"))
-        response = client.prompt("command-a-vision-07-2025", VISION_PROMPT, images=[sample_image_path])
+        response = client.prompt(
+            "command-a-vision-07-2025", VISION_PROMPT, images=[sample_image_path]
+        )
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
