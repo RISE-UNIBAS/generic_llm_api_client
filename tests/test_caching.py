@@ -188,7 +188,9 @@ class TestConversationTracking:
         )
 
         assert response2.conversation_id == conv_id
-        assert "message 2" in response2.text.lower()
+        # After first call: 2 messages stored (user + assistant)
+        # Second call loads 2 + adds new user message = 3 messages total
+        assert "message 3" in response2.text.lower()
 
     def test_conversation_history_storage(self, mock_client):
         """Test that conversation history is stored correctly."""
@@ -256,7 +258,8 @@ class TestOpenAICaching:
     @pytest.fixture
     def mock_openai_client(self, mocker):
         """Create a mock OpenAI client."""
-        mock_openai = mocker.patch("openai.OpenAI")
+        # Patch where OpenAI is imported (in openai_client.py)
+        mock_openai = mocker.patch("ai_client.openai_client.OpenAI")
 
         # Create a mock response with cached tokens
         mock_response = mocker.Mock()
@@ -314,7 +317,8 @@ class TestClaudeCaching:
     @pytest.fixture
     def mock_claude_client(self, mocker):
         """Create a mock Claude client."""
-        mock_anthropic = mocker.patch("anthropic.Anthropic")
+        # Patch where Anthropic is imported (in claude_client.py)
+        mock_anthropic = mocker.patch("ai_client.claude_client.Anthropic")
 
         # Create a mock response with cache metrics
         mock_response = mocker.Mock()

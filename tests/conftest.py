@@ -21,6 +21,9 @@ def mock_openai_response():
     response.usage.prompt_tokens = 10
     response.usage.completion_tokens = 20
     response.usage.total_tokens = 30
+    # Mock prompt_tokens_details for cached tokens (prevents Mock comparison errors)
+    response.usage.prompt_tokens_details = Mock()
+    response.usage.prompt_tokens_details.cached_tokens = 0
     return response
 
 
@@ -37,6 +40,9 @@ def mock_claude_response():
     response.usage = Mock()
     response.usage.input_tokens = 15
     response.usage.output_tokens = 25
+    # Mock cache attributes (prevents Mock comparison errors)
+    response.usage.cache_creation_input_tokens = 0
+    response.usage.cache_read_input_tokens = 0
     return response
 
 

@@ -310,10 +310,10 @@ class ClaudeClient(BaseAIClient):
                 cache_read_tokens=cache_read_tokens,
             )
 
-            # Log cache usage
-            if cache_creation_tokens > 0:
+            # Log cache usage (safely handle potential Mock objects in tests)
+            if isinstance(cache_creation_tokens, (int, float)) and cache_creation_tokens > 0:
                 logger.info(f"Claude cache created: {cache_creation_tokens} tokens")
-            if cache_read_tokens > 0:
+            if isinstance(cache_read_tokens, (int, float)) and cache_read_tokens > 0:
                 logger.info(f"Claude cache read: {cache_read_tokens} tokens")
 
             # Calculate cost if pricing data is available
@@ -369,10 +369,10 @@ class ClaudeClient(BaseAIClient):
                 cache_read_tokens=cache_read_tokens,
             )
 
-            # Log cache usage
-            if cache_creation_tokens > 0:
+            # Log cache usage (safely handle potential Mock objects in tests)
+            if isinstance(cache_creation_tokens, (int, float)) and cache_creation_tokens > 0:
                 logger.info(f"Claude cache created: {cache_creation_tokens} tokens")
-            if cache_read_tokens > 0:
+            if isinstance(cache_read_tokens, (int, float)) and cache_read_tokens > 0:
                 logger.info(f"Claude cache read: {cache_read_tokens} tokens")
 
             # Calculate cost if pricing data is available

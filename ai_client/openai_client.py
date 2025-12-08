@@ -355,11 +355,16 @@ class OpenAIClient(BaseAIClient):
                 elif isinstance(details, dict):
                     cached_tokens = details.get("cached_tokens", 0)
 
+            # Safely handle cached_tokens (might be Mock in tests)
+            cached_tokens_value = None
+            if isinstance(cached_tokens, (int, float)) and cached_tokens > 0:
+                cached_tokens_value = cached_tokens
+
             usage = Usage(
                 input_tokens=raw_response.usage.prompt_tokens,
                 output_tokens=raw_response.usage.completion_tokens,
                 total_tokens=raw_response.usage.total_tokens,
-                cached_tokens=cached_tokens if cached_tokens > 0 else None,
+                cached_tokens=cached_tokens_value,
             )
             # OpenRouter may include cost information
             if hasattr(raw_response.usage, "cost"):
