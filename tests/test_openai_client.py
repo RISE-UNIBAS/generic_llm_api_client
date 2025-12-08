@@ -109,6 +109,9 @@ class TestOpenAIClient:
             mock_response.usage.prompt_tokens = 10
             mock_response.usage.completion_tokens = 20
             mock_response.usage.total_tokens = 30
+            # Add prompt_tokens_details to prevent Mock comparison errors
+            mock_response.usage.prompt_tokens_details = Mock()
+            mock_response.usage.prompt_tokens_details.cached_tokens = 0
 
             mock_client.beta.chat.completions.parse.return_value = mock_response
 
