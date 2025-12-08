@@ -80,6 +80,9 @@ class BaseAIClient(abc.ABC):
         self.settings = settings
         self.api_client = None
 
+        # Track conversation state for multi-turn requests
+        self.conversations = {}  # Format: {conv_id: {"messages": [...], "cache_ref": None}}
+
         # Initialize the client implementation
         self._init_client()
 
@@ -135,6 +138,8 @@ class BaseAIClient(abc.ABC):
         files: Optional[List[str]] = None,
         system_prompt: Optional[str] = None,
         response_format: Optional[Any] = None,
+        conversation_id: Optional[str] = None,
+        cache: bool = False,
         **kwargs,
     ) -> LLMResponse:
         """
@@ -147,26 +152,53 @@ class BaseAIClient(abc.ABC):
             files: Optional list of text file paths to include in the prompt
             system_prompt: Optional system prompt to override the default
             response_format: Optional Pydantic model for structured output
+            conversation_id: Continue an existing conversation by ID (generates new ID if None)
+            cache: Enable caching for large prompts/files (provider-specific implementation)
             **kwargs: Additional provider-specific parameters
+                Common: temperature, max_tokens, top_p
+                OpenAI: prompt_cache_key, prompt_cache_retention
+                Gemini: cache_id, ttl
 
         Returns:
-            Tuple of (LLMResponse object, elapsed_time_in_seconds)
+            LLMResponse object with response and usage information
 
         Note:
             Images and files are NOT stored statefully. Pass them with each request.
             Images will be automatically resized if max_image_size is set.
-            File contents are appended to the prompt with XML-like tags.
+
+            Caching behavior (when cache=True):
+            - OpenAI: Automatic for 1024+ tokens (always active)
+            - Claude: Adds cache_control blocks to file content
+            - Gemini: Uses cache_id from kwargs if provided
         """
         start_time = time.time()
 
         # Use provided system prompt or fall back to default
         sys_prompt = system_prompt or self.system_prompt
 
-        # Handle text files - append to prompt
+        # Handle text files
         file_list = files or []
+        file_content = ""
         if file_list:
             file_content = read_text_files(file_list)
-            prompt = prompt + file_content
+            # For caching mode with Claude, keep content separate
+            # Other providers append files to prompt
+            if not (cache and self.PROVIDER_ID == "anthropic"):
+                # Append to prompt as usual (backward-compatible)
+                prompt = prompt + file_content
+
+        # Handle conversation continuation
+        messages = []
+        existing_cache_ref = None
+
+        if conversation_id and conversation_id in self.conversations:
+            # Load existing conversation history
+            conv_data = self.conversations[conversation_id]
+            messages = conv_data["messages"].copy()
+            existing_cache_ref = conv_data.get("cache_ref")
+
+        # Add current prompt as user message
+        messages.append({"role": "user", "content": prompt})
 
         # Handle multimodal content
         image_list = images or []
@@ -186,11 +218,31 @@ class BaseAIClient(abc.ABC):
             response = self._do_prompt_with_retry(
                 model=model,
                 prompt=prompt,
+                messages=messages if len(messages) > 1 else None,
                 images=image_list,
                 system_prompt=sys_prompt,
                 response_format=response_format,
+                cache=cache,
+                file_content=file_content,
                 **kwargs,
             )
+
+            # Create or update conversation ID
+            if conversation_id is None and len(messages) > 0:
+                # Create new conversation ID
+                import uuid
+
+                conversation_id = str(uuid.uuid4())
+
+            if conversation_id:
+                # Store conversation history
+                messages.append({"role": "assistant", "content": response.text})
+                self.conversations[conversation_id] = {
+                    "messages": messages,
+                    "cache_ref": getattr(response, "cache_ref", existing_cache_ref),
+                }
+                response.conversation_id = conversation_id
+
         except Exception as e:
             # Create error response
             response = self._create_error_response(model, str(e))
@@ -222,9 +274,12 @@ class BaseAIClient(abc.ABC):
         self,
         model: str,
         prompt: str,
-        images: List[str],
-        system_prompt: str,
-        response_format: Optional[Any],
+        messages: Optional[List[dict]] = None,
+        images: Optional[List[str]] = None,
+        system_prompt: Optional[str] = None,
+        response_format: Optional[Any] = None,
+        cache: bool = False,
+        file_content: str = "",
         **kwargs,
     ) -> LLMResponse:
         """
@@ -233,10 +288,15 @@ class BaseAIClient(abc.ABC):
         Args:
             model: Model identifier
             prompt: Text prompt
+            messages: Optional conversation history (None for single-turn)
             images: List of image paths/URLs
             system_prompt: System prompt to use
             response_format: Optional Pydantic model for structured output
+            cache: Enable caching (provider interprets this flag)
+            file_content: Content from files (for caching if cache=True)
             **kwargs: Provider-specific parameters
+                OpenAI: prompt_cache_key, prompt_cache_retention
+                Gemini: cache_id, ttl
 
         Returns:
             LLMResponse object with the provider's response
@@ -251,6 +311,8 @@ class BaseAIClient(abc.ABC):
         files: Optional[List[str]] = None,
         system_prompt: Optional[str] = None,
         response_format: Optional[Any] = None,
+        conversation_id: Optional[str] = None,
+        cache: bool = False,
         **kwargs,
     ) -> LLMResponse:
         """
@@ -263,17 +325,27 @@ class BaseAIClient(abc.ABC):
             files: Optional list of text file paths to include
             system_prompt: Optional system prompt override
             response_format: Optional Pydantic model for structured output
+            conversation_id: Continue an existing conversation by ID
+            cache: Enable caching (provider-specific)
             **kwargs: Additional provider-specific parameters
 
         Returns:
-            Tuple of (LLMResponse object, elapsed_time_in_seconds)
+            LLMResponse object with response and usage information
         """
         # Default implementation runs sync version in executor
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None,
             lambda: self.prompt(
-                model, prompt, images, files, system_prompt, response_format, **kwargs
+                model=model,
+                prompt=prompt,
+                images=images,
+                files=files,
+                system_prompt=system_prompt,
+                response_format=response_format,
+                conversation_id=conversation_id,
+                cache=cache,
+                **kwargs,
             ),
         )
 
@@ -317,6 +389,34 @@ class BaseAIClient(abc.ABC):
             True if the provider supports multimodal content, False otherwise
         """
         return self.SUPPORTS_MULTIMODAL
+
+    def clear_conversation(self, conversation_id: str) -> None:
+        """
+        Clear a specific conversation from memory.
+
+        Args:
+            conversation_id: The conversation ID to clear
+        """
+        if conversation_id in self.conversations:
+            del self.conversations[conversation_id]
+
+    def clear_all_conversations(self) -> None:
+        """Clear all conversations from memory."""
+        self.conversations.clear()
+
+    def get_conversation_history(self, conversation_id: str) -> Optional[List[dict]]:
+        """
+        Get the message history for a conversation.
+
+        Args:
+            conversation_id: The conversation ID
+
+        Returns:
+            List of message dictionaries, or None if conversation doesn't exist
+        """
+        if conversation_id in self.conversations:
+            return self.conversations[conversation_id]["messages"].copy()
+        return None
 
     def __str__(self):
         """String representation of the AI client."""
@@ -375,6 +475,7 @@ def create_ai_client(
     from .mistral_client import MistralClient
     from .deepseek_client import DeepSeekClient
     from .qwen_client import QwenClient
+    from .cohere_client import CohereClient
 
     provider_map = {
         "openai": OpenAIClient,
@@ -384,6 +485,7 @@ def create_ai_client(
         "mistral": MistralClient,
         "deepseek": DeepSeekClient,
         "qwen": QwenClient,
+        "cohere": CohereClient,
         "openrouter": OpenAIClient,  # Uses OpenAI-compatible API
         "scicore": OpenAIClient,  # Uses OpenAI-compatible API
     }
@@ -393,6 +495,12 @@ def create_ai_client(
             f"Unsupported AI provider: {provider}. "
             f"Supported providers: {', '.join(provider_map.keys())}"
         )
+
+    # Set default base_url for providers that need it (BEFORE client instantiation)
+    if provider == "openrouter" and base_url is None:
+        base_url = "https://openrouter.ai/api/v1"
+    elif provider == "scicore" and base_url is None:
+        base_url = "https://llm-api-h200.ceda.unibas.ch/litellm"
 
     client_class = provider_map[provider]
     return client_class(api_key, system_prompt, base_url, max_image_size, image_quality, **settings)

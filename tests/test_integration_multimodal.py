@@ -142,6 +142,37 @@ class TestMistralVision:
 
 
 @pytest.mark.integration
+class TestCohereVision:
+    """Integration tests for Cohere vision models."""
+
+    @pytest.fixture(autouse=True)
+    def skip_if_no_api_key(self):
+        """Skip test if API key not set."""
+        if not os.getenv("COHERE_API_KEY"):
+            pytest.skip("COHERE_API_KEY not set")
+
+    def test_cohere_vision_with_image(self, sample_image_path):
+        """Test Cohere vision model with image."""
+        client = create_ai_client("cohere", api_key=os.getenv("COHERE_API_KEY"))
+        response = client.prompt("command-a-vision-07-2025", VISION_PROMPT, images=[sample_image_path])
+
+        # Verify response structure
+        assert isinstance(response, LLMResponse)
+        assert response.text != ""
+        assert response.provider == "cohere"
+        assert response.finish_reason in ["stop", "complete", "COMPLETE"]
+
+        # Verify usage tracking
+        assert response.usage.input_tokens > 0
+        assert response.usage.output_tokens > 0
+
+        # Verify timing
+        assert response.duration > 0
+
+        print(f"\nCohere vision response: {response.text}")
+
+
+@pytest.mark.integration
 class TestDeepSeekVision:
     """Integration tests for DeepSeek vision models."""
 

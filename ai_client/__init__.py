@@ -6,7 +6,7 @@ their respective APIs, with separate implementation files for each provider.
 
 Key features:
 - Abstract base client defining the common interface for all AI providers
-- Provider-specific implementations for OpenAI, Google Gemini, Anthropic Claude, Mistral, DeepSeek, and Qwen
+- Provider-specific implementations for OpenAI, Google Gemini, Anthropic Claude, Mistral, Cohere, DeepSeek, and Qwen
 - Support for both text-only and multimodal (text + images) content
 - Consistent LLMResponse format with detailed usage tracking
 - Factory method to create appropriate client based on provider
@@ -18,6 +18,7 @@ Technical implementation details:
 - Google Gemini: Uses the GenerativeModel class with image support
 - Anthropic Claude: Uses the messages API with tool-based structured output
 - Mistral: Uses the chat completion API with multimodal support
+- Cohere: Uses the chat API (ClientV2) with vision model support for multimodal content
 - DeepSeek: OpenAI-compatible API with custom base URL
 - Qwen: OpenAI-compatible API with custom base URL
 - OpenRouter/sciCORE: Use OpenAI client with custom base URLs
@@ -30,6 +31,7 @@ from .claude_client import ClaudeClient
 from .mistral_client import MistralClient
 from .deepseek_client import DeepSeekClient
 from .qwen_client import QwenClient
+from .cohere_client import CohereClient
 from .response import LLMResponse, Usage
 from .pricing import set_pricing_file
 from .utils import (
@@ -55,6 +57,7 @@ __all__ = [
     "MistralClient",
     "DeepSeekClient",
     "QwenClient",
+    "CohereClient",
     # Response and utility classes
     "LLMResponse",
     "Usage",

@@ -80,11 +80,14 @@ class MistralClient(BaseAIClient):
 
     def _do_prompt(
         self,
-        model: str,
-        prompt: str,
-        images: List[str],
-        system_prompt: str,
-        response_format: Optional[Any],
+        model,
+        prompt,
+        messages=None,
+        images=None,
+        system_prompt=None,
+        response_format=None,
+        cache=False,
+        file_content="",
         **kwargs,
     ) -> LLMResponse:
         """
@@ -93,9 +96,12 @@ class MistralClient(BaseAIClient):
         Args:
             model: The Mistral model identifier
             prompt: The text prompt to send
+            messages: Optional conversation history (multi-turn)
             images: List of image paths/URLs
             system_prompt: System prompt to use
             response_format: Optional Pydantic model for structured output
+            cache: Not used (Mistral doesn't support caching)
+            file_content: Not used (files already appended to prompt)
             **kwargs: Additional Mistral-specific parameters
 
         Returns:

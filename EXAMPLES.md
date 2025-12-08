@@ -417,3 +417,272 @@ for provider, model in providers:
     print(f"Tokens: {response.usage.total_tokens}")
     print(f"Response: {response.text[:200]}...")
 ```
+## Prompt Caching
+
+Prompt caching reduces costs and latency by reusing previously processed content. The `cache=True` parameter works across all providers, with each handling it appropriately.
+
+### Generic Caching API
+
+**The beauty of this package**: Use the same API regardless of provider!
+
+```python
+from ai_client import create_ai_client
+
+# Works with ANY provider - swap 'openai' for 'anthropic', 'genai', etc.
+client = create_ai_client('openai', api_key='sk-...')
+
+# Enable caching with a simple flag
+response = client.prompt(
+    model='gpt-4o',
+    prompt='Analyze this document and list key points',
+    files=['research_paper.txt'],  # Large file
+    cache=True,  # ✅ Generic - each provider interprets appropriately
+)
+
+# Check caching results (works for all providers)
+if response.usage.cached_tokens:
+    savings = response.usage.get_cache_savings()
+    print(f"Cache hit! Saved {savings:.1%} of tokens")
+```
+
+### How Each Provider Handles `cache=True`
+
+| Provider | Behavior | Min Tokens | Retention |
+|----------|----------|------------|-----------|
+| **OpenAI** | Always automatic (1024+ tokens) | 1,024 | 5-10 min or 24h |
+| **Claude** | Adds `cache_control` blocks to files | 1,024-4,096 | 5 min (auto-refresh) |
+| **Gemini** | Uses `cache_id` if provided | 1,024-4,096 | User-defined |
+| **Mistral** | Not supported (ignored) | N/A | N/A |
+
+### Provider-Specific Examples
+
+#### OpenAI: Automatic Caching
+
+OpenAI automatically caches prompts with 1024+ tokens. No special code needed!
+
+```python
+client = create_ai_client('openai', api_key='sk-...')
+
+long_document = open('research_paper.txt').read()  # e.g., 10,000 tokens
+
+# First request: No cache hit
+response1 = client.prompt(
+    'gpt-4o',
+    f"Document:\n\n{long_document}\n\nWhat is the main argument?"
+)
+print(f"Cached: {response1.usage.cached_tokens or 0} tokens")  # 0
+
+# Second request with same prefix: Cache hit!
+response2 = client.prompt(
+    'gpt-4o',
+    f"Document:\n\n{long_document}\n\nList three supporting points."
+)
+print(f"Cached: {response2.usage.cached_tokens or 0} tokens")  # ~10000
+print(f"Savings: {response2.usage.get_cache_savings():.1%}")  # ~95%
+```
+
+**Advanced OpenAI Options** (via kwargs):
+
+```python
+# Improve cache hit rates and extend retention
+response = client.prompt(
+    'gpt-4o',
+    prompt=long_document + "\n\nYour question...",
+    cache=True,  # Informational (always on anyway)
+    prompt_cache_key="batch_001",  # Group related requests
+    prompt_cache_retention="24h",  # Extended retention
+)
+```
+
+#### Claude: Cache Control Blocks
+
+Claude requires explicit marking via `cache=True` when using files:
+
+```python
+client = create_ai_client('anthropic', api_key='sk-...')
+
+# First request: Create cache
+response1 = client.prompt(
+    'claude-3-5-sonnet-20241022',
+    prompt="What is the main theme of this essay?",
+    files=['long_essay.txt'],  # 5,000+ tokens
+    cache=True,  # ✅ Adds cache_control blocks
+)
+
+conv_id = response1.conversation_id
+print(f"Cache created: {response1.usage.cache_creation_tokens} tokens")
+print(f"Cost: 125% of input rate")
+
+# Subsequent requests (within 5 min): Cache hit!
+response2 = client.prompt(
+    'claude-3-5-sonnet-20241022',
+    prompt="List three supporting arguments.",
+    conversation_id=conv_id,  # Reuse conversation + cache
+)
+
+print(f"Cache read: {response2.usage.cache_read_tokens} tokens")
+print(f"Cost: 10% of input rate (90% savings!)")
+print(f"Savings: {response2.usage.get_cache_savings():.1%}")
+```
+
+**Claude Cache Pricing**:
+- Write to cache: 125% of base input cost
+- Read from cache: **10% of base input cost** (90% discount!)
+- Auto-refreshes on access (5-min TTL)
+
+#### Gemini: Explicit Cache (Advanced)
+
+*Note: Gemini requires explicit cache creation. This is more advanced.*
+
+```python
+client = create_ai_client('genai', api_key='...')
+
+# For Gemini, you'd need to add cache_id via kwargs after creating a cache
+# See Gemini docs for cache creation API
+response = client.prompt(
+    'gemini-2.0-flash',
+    prompt="Analyze this",
+    cache=True,
+    cache_id="cache_abc123",  # Reference to pre-created cache
+)
+```
+
+### Conversation Tracking
+
+Track multi-turn conversations automatically:
+
+```python
+client = create_ai_client('openai', api_key='sk-...')  # Any provider works!
+
+# First message
+response1 = client.prompt(
+    'gpt-4o',
+    "My name is Alice. What's a good programming language to learn?"
+)
+
+conv_id = response1.conversation_id
+print(f"Started conversation: {conv_id}")
+
+# Continue conversation
+response2 = client.prompt(
+    'gpt-4o',
+    "What is my name?",  # Model remembers "Alice"
+    conversation_id=conv_id,
+)
+
+print(response2.text)  # "Your name is Alice."
+
+# View history
+history = client.get_conversation_history(conv_id)
+for msg in history:
+    print(f"{msg['role']}: {msg['content'][:50]}...")
+
+# Clear when done
+client.clear_conversation(conv_id)
+```
+
+### Combined: Caching + Conversations
+
+Maximum efficiency with both features:
+
+```python
+client = create_ai_client('anthropic', api_key='sk-...')
+
+# Establish context with caching
+response1 = client.prompt(
+    'claude-3-5-sonnet-20241022',
+    prompt="I've provided a research paper. Please read it.",
+    files=['research_paper.txt'],  # 10,000 tokens
+    cache=True,  # ✅ Cache the file content
+)
+
+conv_id = response1.conversation_id
+print(f"Cache created: {response1.usage.cache_creation_tokens} tokens")
+
+# Ask multiple questions (cache reused, conversation maintained)
+questions = [
+    "What is the main hypothesis?",
+    "What methodology was used?",
+    "What were the key findings?",
+]
+
+for question in questions:
+    response = client.prompt(
+        'claude-3-5-sonnet-20241022',
+        prompt=question,
+        conversation_id=conv_id,  # ✅ Reuses both cache AND history
+    )
+    
+    print(f"\nQ: {question}")
+    print(f"A: {response.text[:150]}...")
+    print(f"Cache read: {response.usage.cache_read_tokens} tokens (90% savings!)")
+```
+
+### Best Practices
+
+#### 1. Structure Prompts for Caching
+
+**✅ Good**: Static content first
+```python
+# Put unchanging content at the beginning
+prompt = f"Reference:\n\n{large_document}\n\nUser question: {user_question}"
+response = client.prompt(model, prompt, cache=True)
+```
+
+**❌ Bad**: Dynamic content first
+```python
+# Cache misses because prefix changes each time
+prompt = f"User {user_id}: {user_question}\n\nReference: {large_document}"
+```
+
+#### 2. Monitor Cache Performance
+
+```python
+response = client.prompt(model, prompt, files=['doc.txt'], cache=True)
+
+# Generic - works for all providers
+savings = response.usage.get_cache_savings()
+if savings > 0:
+    print(f"Cache hit! Saved {savings:.1%}")
+else:
+    print("Cache miss - first request or expired")
+
+# Provider-specific details
+if response.provider == 'anthropic':
+    print(f"Cache created: {response.usage.cache_creation_tokens}")
+    print(f"Cache read: {response.usage.cache_read_tokens}")
+elif response.provider == 'openai':
+    print(f"Cached tokens: {response.usage.cached_tokens}")
+```
+
+#### 3. Use Conversations for Context
+
+```python
+# Start with large context
+response1 = client.prompt(
+    model,
+    "Here's the document...",
+    files=['large_file.txt'],
+    cache=True,
+)
+
+# Ask follow-ups (reuses cache via conversation)
+for question in follow_up_questions:
+    response = client.prompt(
+        model,
+        question,
+        conversation_id=response1.conversation_id,  # ✅ Maintains context
+    )
+```
+
+### Provider Comparison
+
+| Feature | OpenAI | Claude | Gemini |
+|---------|--------|---------|--------|
+| **Setup** | None (automatic) | `cache=True` + `files` | Manual cache creation |
+| **Cost** | Free | Write: 125%, Read: 10% | Varies |
+| **Retention** | 5-10 min (or 24h) | 5 min (auto-refresh) | User-defined |
+| **Best For** | High-volume apps | Multi-turn conversations | Research sessions |
+| **API** | `cache=True` (optional) | `cache=True` (required for files) | `cache=True` + `cache_id` |
+
+**Key Takeaway**: Use `cache=True` everywhere, and it just works! Each provider handles it optimally.

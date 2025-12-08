@@ -72,6 +72,36 @@ def mock_mistral_response():
 
 
 @pytest.fixture
+def mock_cohere_response():
+    """Mock Cohere API response."""
+    response = Mock()
+    response.id = "cohere_123"
+    response.finish_reason = "COMPLETE"
+
+    # Mock message content structure
+    message = Mock()
+    content_block = Mock()
+    content_block.text = "Hello! I'm Cohere."
+    message.content = [content_block]
+    response.message = message
+
+    # Mock usage information
+    usage = Mock()
+    tokens = Mock()
+    tokens.input_tokens = 13
+    tokens.output_tokens = 17
+    usage.tokens = tokens
+
+    billed_units = Mock()
+    billed_units.input_tokens = 13
+    billed_units.output_tokens = 17
+    usage.billed_units = billed_units
+
+    response.usage = usage
+    return response
+
+
+@pytest.fixture
 def sample_image_path(tmp_path):
     """Create a temporary test image file using Pillow."""
     from PIL import Image, ImageDraw

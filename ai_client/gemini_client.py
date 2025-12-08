@@ -107,11 +107,14 @@ class GeminiClient(BaseAIClient):
 
     def _do_prompt(
         self,
-        model: str,
-        prompt: str,
-        images: List[str],
-        system_prompt: str,
-        response_format: Optional[Any],
+        model,
+        prompt,
+        messages=None,
+        images=None,
+        system_prompt=None,
+        response_format=None,
+        cache=False,
+        file_content="",
         **kwargs,
     ) -> LLMResponse:
         """
@@ -120,10 +123,14 @@ class GeminiClient(BaseAIClient):
         Args:
             model: The Gemini model identifier (e.g., "gemini-pro", "gemini-pro-vision")
             prompt: The text prompt to send
+            messages: Optional conversation history (multi-turn)
             images: List of image paths/URLs
             system_prompt: System prompt (prepended to prompt for Gemini)
             response_format: Optional Pydantic model for structured output
+            cache: If True, uses cache_id from kwargs if provided
+            file_content: Not used (files already appended to prompt)
             **kwargs: Additional Gemini-specific parameters
+                cache_id: Reference to previously created cache
 
         Returns:
             LLMResponse object with the provider's response

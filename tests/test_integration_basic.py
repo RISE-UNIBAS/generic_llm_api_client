@@ -310,6 +310,40 @@ class TestSciCOREIntegration:
 
 
 @pytest.mark.integration
+class TestCohereIntegration:
+    """Integration tests for Cohere."""
+
+    @pytest.fixture(autouse=True)
+    def skip_if_no_api_key(self):
+        """Skip test if API key not set."""
+        if not os.getenv("COHERE_API_KEY"):
+            pytest.skip("COHERE_API_KEY not set")
+
+    def test_cohere_basic_prompt(self):
+        """Test basic Cohere prompt with real API."""
+        client = create_ai_client("cohere", api_key=os.getenv("COHERE_API_KEY"))
+        response = client.prompt("command-r", SIMPLE_PROMPT)
+
+        # Verify response structure
+        assert isinstance(response, LLMResponse)
+        assert response.text != ""
+        assert response.provider == "cohere"
+        assert response.model == "command-r"
+        assert response.finish_reason in ["stop", "complete", "COMPLETE"]
+
+        # Verify usage tracking
+        assert response.usage.input_tokens > 0
+        assert response.usage.output_tokens > 0
+        assert response.usage.total_tokens > 0
+
+        # Verify timing
+        assert response.duration > 0
+
+        # Verify response content
+        assert "hello" in response.text.lower() or "working" in response.text.lower()
+
+
+@pytest.mark.integration
 class TestProviderParity:
     """Tests that verify all providers work similarly."""
 
@@ -330,6 +364,8 @@ class TestProviderParity:
             providers_to_test.append(
                 ("mistral", "mistral-small-latest", os.getenv("MISTRAL_API_KEY"))
             )
+        if os.getenv("COHERE_API_KEY"):
+            providers_to_test.append(("cohere", "command-r", os.getenv("COHERE_API_KEY")))
         if os.getenv("DEEPSEEK_API_KEY"):
             providers_to_test.append(("deepseek", "deepseek-chat", os.getenv("DEEPSEEK_API_KEY")))
         if os.getenv("QWEN_API_KEY"):

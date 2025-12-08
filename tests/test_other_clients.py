@@ -1,10 +1,10 @@
 """
-Tests for Gemini, Mistral, DeepSeek, and Qwen clients.
+Tests for Gemini, Mistral, Cohere, DeepSeek, and Qwen clients.
 """
 
 import pytest
 from unittest.mock import Mock, patch
-from ai_client import create_ai_client, GeminiClient, MistralClient, DeepSeekClient, QwenClient
+from ai_client import create_ai_client, GeminiClient, MistralClient, CohereClient, DeepSeekClient, QwenClient
 from ai_client.response import LLMResponse
 
 
@@ -158,3 +158,99 @@ class TestQwenClient:
             # Should work like OpenAI client
             assert isinstance(response, LLMResponse)
             assert response.text == "Hello! I'm an AI assistant."
+
+
+class TestCohereClient:
+    """Tests for CohereClient."""
+
+    def test_cohere_client_initialization(self):
+        """Test Cohere client initialization."""
+        with patch("ai_client.cohere_client.cohere"):
+            client = create_ai_client("cohere", api_key="test-key")
+
+            assert isinstance(client, CohereClient)
+            assert client.PROVIDER_ID == "cohere"
+            assert client.SUPPORTS_MULTIMODAL is True
+
+    def test_prompt_text_only(self, mock_cohere_response):
+        """Test text-only prompt."""
+        with patch("ai_client.cohere_client.cohere") as mock_cohere_module:
+            mock_client = Mock()
+            mock_cohere_module.ClientV2.return_value = mock_client
+            mock_client.chat.return_value = mock_cohere_response
+
+            client = create_ai_client("cohere", api_key="test-key")
+            response = client.prompt("command-r", "Hello!")
+
+            # Check response
+            assert isinstance(response, LLMResponse)
+            assert response.text == "Hello! I'm Cohere."
+            assert response.provider == "cohere"
+            assert response.usage.input_tokens == 13
+            assert response.usage.output_tokens == 17
+            assert response.duration >= 0
+
+    def test_prompt_with_images(self, mock_cohere_response, sample_image_path):
+        """Test prompt with images (vision model)."""
+        with patch("ai_client.cohere_client.cohere") as mock_cohere_module:
+            mock_client = Mock()
+            mock_cohere_module.ClientV2.return_value = mock_client
+            mock_client.chat.return_value = mock_cohere_response
+
+            client = create_ai_client("cohere", api_key="test-key")
+            response = client.prompt(
+                "command-a-vision-07-2025", "Describe this", images=[sample_image_path]
+            )
+
+            assert isinstance(response, LLMResponse)
+            assert response.text == "Hello! I'm Cohere."
+
+    def test_prompt_with_custom_parameters(self, mock_cohere_response):
+        """Test prompt with custom parameters like temperature and max_tokens."""
+        with patch("ai_client.cohere_client.cohere") as mock_cohere_module:
+            mock_client = Mock()
+            mock_cohere_module.ClientV2.return_value = mock_client
+            mock_client.chat.return_value = mock_cohere_response
+
+            client = create_ai_client("cohere", api_key="test-key")
+            response = client.prompt(
+                "command-r",
+                "Hello!",
+                temperature=0.7,
+                max_tokens=100
+            )
+
+            # Verify chat was called
+            assert mock_client.chat.called
+            call_kwargs = mock_client.chat.call_args.kwargs
+
+            # Check that parameters were passed
+            assert call_kwargs["temperature"] == 0.7
+            assert call_kwargs["max_tokens"] == 100
+
+    def test_model_list(self):
+        """Test getting list of available models."""
+        with patch("ai_client.cohere_client.cohere") as mock_cohere_module:
+            # Mock both ClientV2 and Client (v1 used for models.list())
+            mock_client_v2 = Mock()
+            mock_client_v1 = Mock()
+            mock_cohere_module.ClientV2.return_value = mock_client_v2
+            mock_cohere_module.Client.return_value = mock_client_v1
+
+            # Mock models list response
+            mock_model_1 = Mock()
+            mock_model_1.name = "command-r"
+            mock_model_2 = Mock()
+            mock_model_2.name = "command-a-03-2025"
+
+            mock_models_response = Mock()
+            mock_models_response.models = [mock_model_1, mock_model_2]
+            mock_client_v1.models.list.return_value = mock_models_response
+
+            client = create_ai_client("cohere", api_key="test-key")
+            models = client.get_model_list()
+
+            # Check that we got the expected models
+            assert len(models) == 2
+            assert models[0] == ("command-r", None)
+            assert models[1] == ("command-a-03-2025", None)

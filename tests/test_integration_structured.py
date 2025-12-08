@@ -252,6 +252,44 @@ class TestMistralStructuredOutput:
 
 
 @pytest.mark.integration
+class TestCohereStructuredOutput:
+    """Integration tests for Cohere structured output."""
+
+    @pytest.fixture(autouse=True)
+    def skip_if_no_api_key(self):
+        """Skip test if API key not set."""
+        if not os.getenv("COHERE_API_KEY"):
+            pytest.skip("COHERE_API_KEY not set")
+
+    def test_cohere_simple_structured_output(self):
+        """Test Cohere with simple Pydantic model."""
+        client = create_ai_client("cohere", api_key=os.getenv("COHERE_API_KEY"))
+        response = client.prompt(
+            "command-r",
+            "Extract information about: Carol Davis is a 35 year old engineer.",
+            response_format=PersonInfo,
+        )
+
+        # Verify response structure
+        assert isinstance(response, LLMResponse)
+        assert response.text != ""
+        assert response.provider == "cohere"
+
+        # Parse and verify structured data
+        data = json.loads(response.text)
+        assert "name" in data
+        assert "age" in data
+        assert "occupation" in data
+
+        # Verify values
+        assert "carol" in data["name"].lower() or "davis" in data["name"].lower()
+        assert data["age"] == 35
+        assert "engineer" in data["occupation"].lower()
+
+        print(f"\nCohere structured output: {data}")
+
+
+@pytest.mark.integration
 class TestStructuredOutputWithVision:
     """Test structured output combined with vision capabilities."""
 

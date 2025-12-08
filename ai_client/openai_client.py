@@ -109,34 +109,94 @@ class OpenAIClient(BaseAIClient):
         self,
         model: str,
         prompt: str,
-        images: List[str],
-        system_prompt: str,
-        response_format: Optional[Any],
+        messages: Optional[List[dict]] = None,
+        images: Optional[List[str]] = None,
+        system_prompt: Optional[str] = None,
+        response_format: Optional[Any] = None,
+        cache: bool = False,
+        file_content: str = "",
         **kwargs,
     ) -> LLMResponse:
         """
         Send a prompt to the OpenAI model and get the response.
 
+        OpenAI has automatic prompt caching for 1024+ tokens.
+
         Args:
             model: The OpenAI model identifier (e.g., "gpt-4o", "gpt-3.5-turbo")
             prompt: The text prompt to send
+            messages: Optional conversation history (multi-turn)
             images: List of image paths/URLs to include
             system_prompt: System prompt to use
             response_format: Optional Pydantic model for structured output
+            cache: Informational only (caching is always automatic)
+            file_content: Not used (files already appended to prompt)
             **kwargs: Additional OpenAI-specific parameters
+                prompt_cache_key: Routing hint for cache optimization
+                prompt_cache_retention: "in_memory" (5-10min) or "24h"
 
         Returns:
             LLMResponse object with the provider's response
         """
-        # Prepare messages with any images
-        messages = self._prepare_message_with_images(prompt, images, system_prompt)
+        # Handle conversation messages
+        images = images or []
+        if messages and len(messages) > 1:
+            # Multi-turn conversation: use provided messages
+            api_messages = []
+
+            # Add system prompt first
+            if system_prompt:
+                api_messages.append({"role": "system", "content": system_prompt})
+
+            # Add conversation messages, attaching images to the last user message
+            for i, msg in enumerate(messages):
+                if msg["role"] == "user" and i == len(messages) - 1 and images:
+                    # Last user message - add images
+                    content = [{"type": "text", "text": msg["content"]}]
+                    for resource in images:
+                        if self.is_url(resource):
+                            content.append({"type": "image_url", "image_url": {"url": resource}})
+                        else:
+                            try:
+                                with open(resource, "rb") as image_file:
+                                    image_data = image_file.read()
+                                    base64_image = base64.b64encode(image_data).decode("utf-8")
+                                from .utils import detect_image_mime_type
+
+                                mime_type = detect_image_mime_type(resource)
+                                content.append(
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:{mime_type};base64,{base64_image}"
+                                        },
+                                    }
+                                )
+                            except Exception as e:
+                                logger.error(f"Error reading image file {resource}: {e}")
+                    api_messages.append({"role": msg["role"], "content": content})
+                else:
+                    api_messages.append(msg)
+        else:
+            # Single-turn request: use original method
+            api_messages = self._prepare_message_with_images(prompt, images, system_prompt)
 
         # Extract OpenAI-specific parameters from settings and kwargs
         params = {
             "model": model,
-            "messages": messages,
+            "messages": api_messages,
             "temperature": kwargs.get("temperature", self.settings.get("temperature", 0.5)),
         }
+
+        # Add OpenAI caching parameters (from kwargs)
+        if "prompt_cache_key" in kwargs:
+            params["prompt_cache_key"] = kwargs["prompt_cache_key"]
+
+        if "prompt_cache_retention" in kwargs and kwargs["prompt_cache_retention"] in [
+            "in_memory",
+            "24h",
+        ]:
+            params["prompt_cache_retention"] = kwargs["prompt_cache_retention"]
 
         # Add optional parameters if specified
         optional_params = [
@@ -204,10 +264,20 @@ class OpenAIClient(BaseAIClient):
 
         usage = Usage()
         if hasattr(raw_response, "usage") and raw_response.usage:
+            # Extract cached tokens from prompt_tokens_details
+            cached_tokens = 0
+            if hasattr(raw_response.usage, "prompt_tokens_details"):
+                details = raw_response.usage.prompt_tokens_details
+                if hasattr(details, "cached_tokens"):
+                    cached_tokens = details.cached_tokens
+                elif isinstance(details, dict):
+                    cached_tokens = details.get("cached_tokens", 0)
+
             usage = Usage(
                 input_tokens=raw_response.usage.prompt_tokens,
                 output_tokens=raw_response.usage.completion_tokens,
                 total_tokens=raw_response.usage.total_tokens,
+                cached_tokens=cached_tokens if cached_tokens > 0 else None,
             )
             # Calculate cost if pricing data is available
             costs = calculate_cost(
@@ -276,10 +346,20 @@ class OpenAIClient(BaseAIClient):
 
         usage = Usage()
         if hasattr(raw_response, "usage") and raw_response.usage:
+            # Extract cached tokens from prompt_tokens_details (correct location)
+            cached_tokens = 0
+            if hasattr(raw_response.usage, "prompt_tokens_details"):
+                details = raw_response.usage.prompt_tokens_details
+                if hasattr(details, "cached_tokens"):
+                    cached_tokens = details.cached_tokens
+                elif isinstance(details, dict):
+                    cached_tokens = details.get("cached_tokens", 0)
+
             usage = Usage(
                 input_tokens=raw_response.usage.prompt_tokens,
                 output_tokens=raw_response.usage.completion_tokens,
                 total_tokens=raw_response.usage.total_tokens,
+                cached_tokens=cached_tokens if cached_tokens > 0 else None,
             )
             # OpenRouter may include cost information
             if hasattr(raw_response.usage, "cost"):
@@ -294,9 +374,6 @@ class OpenAIClient(BaseAIClient):
                 )
                 if costs is not None:
                     usage.input_cost_usd, usage.output_cost_usd, usage.estimated_cost_usd = costs
-
-            if hasattr(raw_response.usage, "cached_tokens"):
-                usage.cached_tokens = raw_response.usage.cached_tokens
 
         return LLMResponse(
             text=text,

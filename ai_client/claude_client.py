@@ -99,27 +99,107 @@ class ClaudeClient(BaseAIClient):
         self,
         model: str,
         prompt: str,
-        images: List[str],
-        system_prompt: str,
-        response_format: Optional[Any],
+        messages: Optional[List[dict]] = None,
+        images: Optional[List[str]] = None,
+        system_prompt: Optional[str] = None,
+        response_format: Optional[Any] = None,
+        cache: bool = False,
+        file_content: str = "",
         **kwargs,
     ) -> LLMResponse:
         """
         Send a prompt to the Claude model and get the response.
 
+        Claude supports prompt caching via cache_control blocks.
+
         Args:
             model: The Claude model identifier (e.g., "claude-3-opus-20240229")
             prompt: The text prompt to send
+            messages: Optional conversation history (multi-turn)
             images: List of image paths/URLs
             system_prompt: System prompt to use
             response_format: Optional Pydantic model for structured output
+            cache: Enable cache_control blocks for files
+            file_content: File content to mark for caching (when cache=True)
             **kwargs: Additional Claude-specific parameters
 
         Returns:
             LLMResponse object with the provider's response
         """
-        # Prepare content with images
-        content = self._prepare_content_with_images(prompt, images)
+        images = images or []
+
+        # Build system blocks with optional caching
+        system_blocks = []
+
+        # Add cached content FIRST (Claude caches trailing system blocks)
+        if file_content and cache:
+            system_blocks.append(
+                {
+                    "type": "text",
+                    "text": f"Reference documents:\n\n{file_content}",
+                    "cache_control": {"type": "ephemeral"},  # Mark for caching
+                }
+            )
+
+        # Add system prompt (not cached by default)
+        if system_prompt:
+            system_blocks.append({"type": "text", "text": system_prompt})
+
+        # Build API messages
+        if messages and len(messages) > 1:
+            # Multi-turn conversation
+            api_messages = []
+            for i, msg in enumerate(messages):
+                content_blocks = []
+
+                # Add images to last user message only
+                if msg["role"] == "user" and i == len(messages) - 1 and images:
+                    for resource in images:
+                        try:
+                            if self.is_url(resource):
+                                import requests
+
+                                response = requests.get(resource)
+                                if response.status_code == 200:
+                                    base64_image = base64.b64encode(response.content).decode(
+                                        "utf-8"
+                                    )
+                                else:
+                                    logger.error(
+                                        f"Failed to fetch image from URL {resource}: {response.status_code}"
+                                    )
+                                    continue
+                            else:
+                                with open(resource, "rb") as image_file:
+                                    base64_image = base64.b64encode(image_file.read()).decode(
+                                        "utf-8"
+                                    )
+
+                            from .utils import detect_image_mime_type
+
+                            media_type = detect_image_mime_type(resource)
+
+                            content_blocks.append(
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": media_type,
+                                        "data": base64_image,
+                                    },
+                                }
+                            )
+                        except Exception as e:
+                            logger.error(f"Error processing image {resource}: {e}")
+
+                # Add text content
+                content_blocks.append({"type": "text", "text": msg["content"]})
+
+                api_messages.append({"role": msg["role"], "content": content_blocks})
+        else:
+            # Single-turn request
+            content = self._prepare_content_with_images(prompt, images)
+            api_messages = [{"role": "user", "content": content}]
 
         # Determine max_tokens based on model
         if "opus" in model.lower():
@@ -132,13 +212,18 @@ class ClaudeClient(BaseAIClient):
         # Extract Claude-specific parameters
         params = {
             "model": model,
-            "messages": [{"role": "user", "content": content}],
-            "system": system_prompt,
+            "messages": api_messages,
             "max_tokens": kwargs.get(
                 "max_tokens", self.settings.get("max_tokens", default_max_tokens)
             ),
             "timeout": 300.0,
         }
+
+        # Add system blocks or simple system prompt
+        if system_blocks:
+            params["system"] = system_blocks
+        elif system_prompt:
+            params["system"] = system_prompt
 
         # Add optional parameters if specified
         optional_params = ["temperature", "top_p", "top_k"]
@@ -213,11 +298,24 @@ class ClaudeClient(BaseAIClient):
 
         usage = Usage()
         if hasattr(raw_response, "usage") and raw_response.usage:
+            # Extract Claude cache tokens
+            cache_creation_tokens = getattr(raw_response.usage, "cache_creation_input_tokens", 0)
+            cache_read_tokens = getattr(raw_response.usage, "cache_read_input_tokens", 0)
+
             usage = Usage(
                 input_tokens=raw_response.usage.input_tokens,
                 output_tokens=raw_response.usage.output_tokens,
                 total_tokens=raw_response.usage.input_tokens + raw_response.usage.output_tokens,
+                cache_creation_tokens=cache_creation_tokens,
+                cache_read_tokens=cache_read_tokens,
             )
+
+            # Log cache usage
+            if cache_creation_tokens > 0:
+                logger.info(f"Claude cache created: {cache_creation_tokens} tokens")
+            if cache_read_tokens > 0:
+                logger.info(f"Claude cache read: {cache_read_tokens} tokens")
+
             # Calculate cost if pricing data is available
             costs = calculate_cost(
                 self.PROVIDER_ID,
@@ -259,11 +357,24 @@ class ClaudeClient(BaseAIClient):
 
         usage = Usage()
         if hasattr(raw_response, "usage") and raw_response.usage:
+            # Extract Claude cache tokens
+            cache_creation_tokens = getattr(raw_response.usage, "cache_creation_input_tokens", 0)
+            cache_read_tokens = getattr(raw_response.usage, "cache_read_input_tokens", 0)
+
             usage = Usage(
                 input_tokens=raw_response.usage.input_tokens,
                 output_tokens=raw_response.usage.output_tokens,
                 total_tokens=raw_response.usage.input_tokens + raw_response.usage.output_tokens,
+                cache_creation_tokens=cache_creation_tokens,
+                cache_read_tokens=cache_read_tokens,
             )
+
+            # Log cache usage
+            if cache_creation_tokens > 0:
+                logger.info(f"Claude cache created: {cache_creation_tokens} tokens")
+            if cache_read_tokens > 0:
+                logger.info(f"Claude cache read: {cache_read_tokens} tokens")
+
             # Calculate cost if pricing data is available
             costs = calculate_cost(
                 self.PROVIDER_ID,
