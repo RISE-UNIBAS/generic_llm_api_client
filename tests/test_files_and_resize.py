@@ -203,7 +203,7 @@ class TestClientWithFiles:
         )
 
         # Call prompt with files
-        response = client.prompt("gpt-4", "Analyze this document", files=[str(file_path)])
+        client.prompt("gpt-4", "Analyze this document", files=[str(file_path)])
 
         # Verify the API was called with modified prompt
         call_args = client.api_client.chat.completions.create.call_args
@@ -249,7 +249,7 @@ class TestClientWithFiles:
         )
 
         # Call prompt with multiple files
-        response = client.prompt("gpt-4", "Compare documents", files=[str(file1), str(file2)])
+        client.prompt("gpt-4", "Compare documents", files=[str(file1), str(file2)])
 
         # Verify both files are in the prompt
         call_args = client.api_client.chat.completions.create.call_args
@@ -295,7 +295,7 @@ class TestClientWithFiles:
         )
 
         # Call prompt with both files and images
-        response = client.prompt(
+        client.prompt(
             "gpt-4o",
             "Does this image match the description?",
             images=[str(img_file)],
@@ -353,7 +353,7 @@ class TestClientWithImageResize:
         )
 
         # Call prompt with large image
-        response = client.prompt("gpt-4o", "Describe this image", images=[str(img_path)])
+        client.prompt("gpt-4o", "Describe this image", images=[str(img_path)])
 
         # Verify the API was called (image was processed)
         assert client.api_client.chat.completions.create.called
@@ -384,7 +384,7 @@ class TestClientWithImageResize:
         )
 
         # Call prompt with large image
-        response = client.prompt("gpt-4o", "Describe this image", images=[str(img_path)])
+        client.prompt("gpt-4o", "Describe this image", images=[str(img_path)])
 
         # Verify the API was called (no resize occurred, but still works)
         assert client.api_client.chat.completions.create.called

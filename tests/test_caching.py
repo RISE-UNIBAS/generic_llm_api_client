@@ -140,7 +140,6 @@ class TestConversationTracking:
         # Mock the _do_prompt method to return test responses
         def mock_do_prompt(*args, **kwargs):
             messages = kwargs.get("messages")
-            prompt = kwargs.get("prompt", "")
 
             # Simulate responses based on conversation history
             if messages and len(messages) > 1:
@@ -200,7 +199,7 @@ class TestConversationTracking:
         )
         conv_id = response1.conversation_id
 
-        response2 = mock_client.prompt(
+        mock_client.prompt(
             model="gpt-4o",
             prompt="Second message",
             conversation_id=conv_id,

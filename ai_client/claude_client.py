@@ -410,7 +410,7 @@ class ClaudeClient(BaseAIClient):
         for model in raw_list:
             try:
                 readable_date = datetime.fromisoformat(str(model.created_at)).strftime("%Y-%m-%d")
-            except:
+            except (ValueError, TypeError, AttributeError):
                 readable_date = None
             model_list.append((model.id, readable_date))
 
