@@ -101,7 +101,7 @@ class CohereClient(BaseAIClient):
             prompt: The text prompt to send
             messages: Optional conversation history (multi-turn)
             images: List of image paths/URLs (for vision models)
-            system_prompt: System prompt to use (preamble in Cohere terminology)
+            system_prompt: System prompt to use (sent as system message in V2 API)
             response_format: Optional Pydantic model for structured output
             cache: Not used (Cohere doesn't support prompt caching yet)
             file_content: Not used (files already appended to prompt)
@@ -123,18 +123,17 @@ class CohereClient(BaseAIClient):
             # Update last message with current content
             chat_messages[-1]["content"] = content
         else:
-            # Single-turn conversation
-            chat_messages = [{"role": "user", "content": content}]
+            # Single-turn conversation - add system message first if provided
+            chat_messages = []
+            if system_prompt:
+                chat_messages.append({"role": "system", "content": system_prompt})
+            chat_messages.append({"role": "user", "content": content})
 
         # Build request parameters
         params = {
             "model": model,
             "messages": chat_messages,
         }
-
-        # Add system prompt (preamble) if provided
-        if system_prompt:
-            params["preamble"] = system_prompt
 
         # Extract Cohere-specific settings
         if "temperature" in kwargs:

@@ -2,5 +2,5 @@ anthropic~=0.73.0
 openai~=2.8.0
 mistralai~=1.9.11
 google-genai~=1.50.1
-cohere~=5.0.0
+cohere~=5.20.0
 requests~=2.32.5
