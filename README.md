@@ -15,6 +15,7 @@ This package is a **convenience wrapper** for working with multiple LLM provider
 - You need provider-agnostic code for research workflows
 
 ### Use the official libraries when:
+
 - You need cutting-edge features on day one of release
 - You require provider-specific advanced features
 - You only work with a single provider

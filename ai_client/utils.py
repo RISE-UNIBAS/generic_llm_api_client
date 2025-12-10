@@ -278,3 +278,59 @@ def resize_image_if_needed(
     except Exception as e:
         logger.warning(f"Failed to resize image {image_path}: {e}. Using original.")
         return image_path
+
+
+def extract_json_from_text(text: str) -> Optional[dict | list]:
+    """
+    Extract and parse JSON from text that may contain JSON in code blocks.
+
+    Handles various formats:
+    - "Here is the json: ```json {...}```"
+    - "```json {...}```"
+    - "``` {...} ```"
+    - Plain JSON (as fallback)
+
+    Args:
+        text: The text potentially containing JSON
+
+    Returns:
+        Parsed JSON as dict or list if found and valid, None otherwise
+
+    Example:
+        >>> text = "Here is the data:\\n```json\\n{\"key\": \"value\"}\\n```"
+        >>> extract_json_from_text(text)
+        {'key': 'value'}
+    """
+    import json
+    import re
+
+    if not text or not isinstance(text, str):
+        return None
+
+    content = text.strip()
+
+    try:
+        # Try to extract JSON from code blocks
+        if "```json" in content:
+            # Match ```json ... ```
+            json_match = re.search(r"```json\s*([\s\S]*?)\s*```", content)
+            if json_match:
+                content = json_match.group(1).strip()
+        elif "```" in content:
+            # Match generic code blocks ``` ... ```
+            json_match = re.search(r"```\s*([\s\S]*?)\s*```", content)
+            if json_match:
+                content = json_match.group(1).strip()
+
+        # Try to parse as JSON
+        json_data = json.loads(content)
+
+        # Validate it's a dict or list (not just a primitive)
+        if isinstance(json_data, (dict, list)):
+            return json_data
+
+    except (json.JSONDecodeError, AttributeError, ValueError) as e:
+        # Not valid JSON or couldn't extract
+        logger.debug(f"Could not extract JSON from text: {e}")
+
+    return None

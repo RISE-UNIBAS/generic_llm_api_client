@@ -16,6 +16,7 @@ import cohere
 from .base_client import BaseAIClient
 from .response import LLMResponse, Usage
 from .pricing import calculate_cost
+from .utils import extract_json_from_text
 
 logger = logging.getLogger(__name__)
 
@@ -203,16 +204,22 @@ class CohereClient(BaseAIClient):
 
         parsed_data = None
 
-        # If response_format was provided, try to validate
-        if response_format and hasattr(response_format, "model_json_schema") and text:
+        # Try to extract JSON from the response (works with or without response_format)
+        extracted_json = extract_json_from_text(text)
+
+        # If response_format was provided, validate with Pydantic
+        if response_format and hasattr(response_format, "model_json_schema") and extracted_json:
             try:
-                json_data = json.loads(text)
-                validated = response_format(**json_data)
+                validated = response_format(**extracted_json)
                 text = validated.model_dump_json()
-                parsed_data = json_data
+                parsed_data = extracted_json
             except Exception as e:
                 logger.warning(f"Failed to validate Cohere structured response: {e}")
-                # Keep original text
+                # Keep original text but still set parsed_data if JSON was valid
+                parsed_data = extracted_json
+        elif extracted_json:
+            # No response_format, but we found valid JSON - populate parsed attribute
+            parsed_data = extracted_json
 
         # Extract usage information
         usage = Usage()

@@ -17,6 +17,7 @@ from anthropic import Anthropic
 from .base_client import BaseAIClient
 from .response import LLMResponse, Usage
 from .pricing import calculate_cost
+from .utils import extract_json_from_text
 
 logger = logging.getLogger(__name__)
 
@@ -295,6 +296,9 @@ class ClaudeClient(BaseAIClient):
                 break
             elif block.type == "text":
                 text = block.text
+                # Try to extract JSON from text (works with or without response_format)
+                if not parsed_data:  # Only if not already set from tool use
+                    parsed_data = extract_json_from_text(text)
 
         usage = Usage()
         if hasattr(raw_response, "usage") and raw_response.usage:
@@ -355,6 +359,9 @@ class ClaudeClient(BaseAIClient):
                     text = block.text
                     break
 
+        # Try to extract JSON from text
+        parsed_data = extract_json_from_text(text)
+
         usage = Usage()
         if hasattr(raw_response, "usage") and raw_response.usage:
             # Extract Claude cache tokens
@@ -392,6 +399,7 @@ class ClaudeClient(BaseAIClient):
             finish_reason=raw_response.stop_reason or "unknown",
             usage=usage,
             raw_response=raw_response,
+            parsed=parsed_data,
         )
 
     def get_model_list(self) -> List[Tuple[str, Optional[str]]]:
