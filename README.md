@@ -25,6 +25,7 @@ This package is a **convenience wrapper** for working with multiple LLM provider
 ## Features
 
 - **Provider-Agnostic**: Single interface for OpenAI, Anthropic, Google, Mistral, DeepSeek, Qwen, and OpenRouter
+- **Tool Calling (Beta)**: Let LLMs use external tools with automatic execution
 - **Multimodal Support**: Text + images across all supporting providers
 - **Text File Support**: Automatically include text files in prompts for document analysis
 - **Automatic Image Resizing**: Reduce API costs by auto-resizing large images
@@ -49,25 +50,25 @@ from ai_client import create_ai_client
 client = create_ai_client('openai', api_key='sk-...')
 
 # Send a prompt
-response, duration = client.prompt('gpt-4', 'What is 2+2?')
+response = client.prompt('gpt-4', 'What is 2+2?')
 
 print(f"Response: {response.text}")
 print(f"Tokens used: {response.usage.total_tokens}")
-print(f"Time: {duration:.2f}s")
+print(f"Time: {response.duration:.2f}s")
 ```
 
 ## Supported Providers
 
-| Provider | ID | Multimodal | Structured Output |
-|----------|-----|-----------|-------------------|
-| OpenAI | `openai` | Yes | Yes |
-| Anthropic Claude | `anthropic` | Yes | Yes (via tools) |
-| Google Gemini | `genai` | Yes | Yes |
-| Mistral | `mistral` | Yes | Yes |
-| DeepSeek | `deepseek` | Yes | Yes |
-| Qwen | `qwen` | Yes | Yes |
-| OpenRouter | `openrouter` | Yes | Yes |
-| sciCORE | `scicore` | Yes | Yes |
+| Provider | ID | Multimodal | Structured Output | Tool Calling |
+|----------|-----|-----------|-------------------|--------------|
+| OpenAI | `openai` | Yes | Yes | Yes (Beta) |
+| Anthropic Claude | `anthropic` | Yes | Yes (via tools) | Coming Soon |
+| Google Gemini | `genai` | Yes | Yes | No |
+| Mistral | `mistral` | Yes | Yes | No |
+| DeepSeek | `deepseek` | Yes | Yes | Via OpenAI |
+| Qwen | `qwen` | Yes | Yes | Via OpenAI |
+| OpenRouter | `openrouter` | Yes | Yes | Via OpenAI |
+| sciCORE | `scicore` | Yes | Yes | Via OpenAI |
 
 ## Usage Examples
 
@@ -217,6 +218,45 @@ person = Person(**person_data)
 
 print(f"{person.name}, {person.age}, {person.occupation}")
 ```
+
+### Tool Calling (Beta)
+
+Enable LLMs to use external tools for enhanced capabilities:
+
+```python
+from ai_client import create_ai_client
+
+client = create_ai_client('openai', api_key='sk-...')
+
+# Single tool usage
+response = client.prompt(
+    'gpt-4o',
+    'What is the GeoNames ID of Zurich, Switzerland?',
+    tool='GeonamesSearch'
+)
+
+print(response.text)  # "The GeoNames ID of Zurich is 2657896"
+
+# Tool execution details
+if response.tool_calls:
+    print(f"Tools called: {[tc['name'] for tc in response.tool_calls]}")
+if response.tool_results:
+    print(f"Results: {len(response.tool_results)} tool(s) executed")
+```
+
+**Features:**
+- **Provider-agnostic**: Same tool definitions work across OpenAI and Claude
+- **Automatic execution**: Tools are called and results returned automatically
+- **Single-round**: LLM can call tools once per request (multi-round coming soon)
+- **Pluggable executors**: Support for Python functions, REST APIs, and MCP servers
+
+**Current status (POC):**
+- ✅ OpenAI support (GPT-4o, GPT-4, etc.)
+- 🚧 Claude support (coming soon)
+- ✅ Built-in tool: GeonamesSearch
+- 🚧 REST API & MCP executors (planned)
+
+See `example_tool_calling.py` for more examples.
 
 ### Async for Parallel Processing
 

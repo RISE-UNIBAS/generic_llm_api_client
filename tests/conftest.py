@@ -15,6 +15,9 @@ def mock_openai_response():
     response.choices = [Mock()]
     response.choices[0].message = Mock()
     response.choices[0].message.content = "Hello! I'm an AI assistant."
+    response.choices[0].message.tool_calls = (
+        None  # Explicitly set to None to prevent iteration errors
+    )
     response.choices[0].finish_reason = "stop"
     response.usage = Mock()
     response.usage.prompt_tokens = 10

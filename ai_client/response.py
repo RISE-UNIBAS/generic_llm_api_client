@@ -109,6 +109,8 @@ class LLMResponse:
         parsed: Parsed JSON as dict/list when using structured output (None otherwise)
         conversation_id: ID for multi-turn conversation tracking (None for single-turn)
         cache_ref: Reference to cache object (Gemini-specific, None otherwise)
+        tool_calls: List of tool calls made by the LLM (None if no tools called)
+        tool_results: List of tool execution results (None if no tools executed)
     """
 
     text: str
@@ -122,6 +124,8 @@ class LLMResponse:
     parsed: Optional[Union[dict, list]] = None
     conversation_id: Optional[str] = None
     cache_ref: Optional[str] = None
+    tool_calls: Optional[list[dict[str, Any]]] = None
+    tool_results: Optional[list[dict[str, Any]]] = None
 
     def to_dict(self) -> dict:
         """
@@ -150,6 +154,10 @@ class LLMResponse:
             result["conversation_id"] = self.conversation_id
         if self.cache_ref is not None:
             result["cache_ref"] = self.cache_ref
+        if self.tool_calls is not None:
+            result["tool_calls"] = self.tool_calls
+        if self.tool_results is not None:
+            result["tool_results"] = self.tool_results
         return result
 
     def __str__(self) -> str:

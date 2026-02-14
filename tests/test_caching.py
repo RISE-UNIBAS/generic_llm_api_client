@@ -263,9 +263,10 @@ class TestOpenAICaching:
         # Create a mock response with cached tokens
         mock_response = mocker.Mock()
         mock_response.model = "gpt-4o"
+        mock_message = mocker.Mock(content="Test response", tool_calls=None)
         mock_response.choices = [
             mocker.Mock(
-                message=mocker.Mock(content="Test response"),
+                message=mock_message,
                 finish_reason="stop",
             )
         ]
