@@ -1,0 +1,47 @@
+{
+  "version": "1.0",
+  "tools": {
+    "GeonamesSearch": {
+      "executor": "python_function",
+      "module": "ai_client.tools.builtin.geonames",
+      "function": "search_geonames",
+      "description": "Search for geographical locations by name using GeoNames database. Returns location details including GeoNames ID, country, population, and coordinates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Location name to search for (e.g., 'Paris', 'Zurich', 'New York')"
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Maximum number of results to return",
+            "default": 5
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    "WikidataSearch": {
+      "executor": "python_function",
+      "module": "ai_client.tools.builtin.wikidata",
+      "function": "search_wikidata",
+      "description": "Search for entities in Wikidata by name. Returns entity details including Wikidata ID, label, description, and URL. Useful for finding people, places, organizations, concepts, etc.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Entity name to search for (e.g., 'Albert Einstein', 'Paris', 'Python programming language')"
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Maximum number of results to return",
+            "default": 5
+          }
+        },
+        "required": ["query"]
+      }
+    }
+  }
+}

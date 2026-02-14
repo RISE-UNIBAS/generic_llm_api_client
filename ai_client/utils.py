@@ -27,6 +27,24 @@ class APIError(Exception):
     pass
 
 
+class ToolNotSupportedError(APIError):
+    """Raised when tool calling is requested but not supported by provider/model."""
+
+    pass
+
+
+class ToolRegistryError(APIError):
+    """Raised when tool registry cannot be loaded or tool not found."""
+
+    pass
+
+
+class ToolExecutionError(APIError):
+    """Raised when tool execution fails."""
+
+    pass
+
+
 def retry_with_exponential_backoff(
     func: Callable[..., T],
     max_retries: int = 3,
