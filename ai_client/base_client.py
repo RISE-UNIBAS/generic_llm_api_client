@@ -10,7 +10,7 @@ implementations to subclasses.
 import abc
 import time
 import asyncio
-from typing import List, Tuple, Any, Optional
+from typing import List, Tuple, Any, Optional, Union
 from .response import LLMResponse, Usage
 from .utils import (
     retry_with_exponential_backoff,
@@ -46,6 +46,7 @@ class BaseAIClient(abc.ABC):
 
     PROVIDER_ID = "base"
     SUPPORTS_MULTIMODAL = False
+    SUPPORTS_TOOLS = False
 
     def __init__(
         self,
@@ -54,6 +55,7 @@ class BaseAIClient(abc.ABC):
         base_url: Optional[str] = None,
         max_image_size: Optional[int] = 2048,
         image_quality: int = 85,
+        tool_config: Optional[dict] = None,
         **settings,
     ):
         """
@@ -65,6 +67,9 @@ class BaseAIClient(abc.ABC):
             base_url: Custom base URL for API endpoints (provider-specific)
             max_image_size: Maximum image dimension in pixels (None to disable resize, default 2048)
             image_quality: JPEG quality for resized images (1-100, default 85)
+            tool_config: Optional dict of tool configurations/credentials
+                Example: {"GeonamesAPI": {"api_key": "xyz"}, "WeatherAPI": {"endpoint": "..."}}
+                Tools can read from env vars by default, this allows programmatic override
             **settings: Additional provider-specific settings like temperature, max_tokens, etc.
         """
         self.init_time = time.time()
@@ -81,6 +86,12 @@ class BaseAIClient(abc.ABC):
 
         # Track conversation state for multi-turn requests
         self.conversations = {}  # Format: {conv_id: {"messages": [...], "cache_ref": None}}
+
+        # Tool configuration (for injecting credentials, endpoints, etc.)
+        self.tool_config = tool_config or {}
+
+        # Tool registry (lazy-loaded on first tool use)
+        self.tool_registry = None
 
         # Initialize the client implementation
         self._init_client()
@@ -139,6 +150,7 @@ class BaseAIClient(abc.ABC):
         response_format: Optional[Any] = None,
         conversation_id: Optional[str] = None,
         cache: bool = False,
+        tool: Optional[Union[str, List[str]]] = None,
         **kwargs,
     ) -> LLMResponse:
         """
@@ -153,6 +165,8 @@ class BaseAIClient(abc.ABC):
             response_format: Optional Pydantic model for structured output
             conversation_id: Continue an existing conversation by ID (generates new ID if None)
             cache: Enable caching for large prompts/files (provider-specific implementation)
+            tool: Optional tool name(s) from registry. Single string or list of strings.
+                Example: "GeonamesSearch" or ["GeonamesSearch", "WikidataSearch"]
             **kwargs: Additional provider-specific parameters
                 Common: temperature, max_tokens, top_p
                 OpenAI: prompt_cache_key, prompt_cache_retention
@@ -167,8 +181,11 @@ class BaseAIClient(abc.ABC):
 
             Caching behavior (when cache=True):
             - OpenAI: Automatic for 1024+ tokens (always active)
-            - Claude: Adds cache_control blocks to file content
+            - Claude: Adds cache_control blocks to files (system) and images (user content)
             - Gemini: Uses cache_id from kwargs if provided
+            - Others: May not support caching
+
+            Cache benefits (Claude): 90% cost reduction, 5-minute TTL
         """
         start_time = time.time()
 
@@ -212,19 +229,77 @@ class BaseAIClient(abc.ABC):
                 for img in image_list
             ]
 
+        # Handle tool calling if requested
+        if tool:
+            # Validate provider supports tools
+            if not self.SUPPORTS_TOOLS:
+                from .utils import ToolNotSupportedError
+
+                raise ToolNotSupportedError(
+                    f"Provider '{self.PROVIDER_ID}' does not support tool calling. "
+                    f"Supported providers: Claude (anthropic), OpenAI"
+                )
+
+            # Lazy-load tool registry
+            if self.tool_registry is None:
+                from .tools.registry import ToolRegistry
+
+                self.tool_registry = ToolRegistry()
+
+            # Parse tool name(s)
+            tool_names = [tool] if isinstance(tool, str) else tool
+
+            # Load tool definitions
+            tool_definitions = [self.tool_registry.get_tool(name) for name in tool_names]
+
+            # Pass to provider via kwargs (internal parameter)
+            kwargs["_tool_definitions"] = tool_definitions
+
         # Call provider-specific implementation with retry logic
         try:
+            # If using tools, don't use response_format in the first call
+            # (first call is just to get tool calls, second call will format the response)
+            first_call_response_format = None if tool else response_format
+
             response = self._do_prompt_with_retry(
                 model=model,
                 prompt=prompt,
                 messages=messages if len(messages) > 1 else None,
                 images=image_list,
                 system_prompt=sys_prompt,
-                response_format=response_format,
+                response_format=first_call_response_format,
                 cache=cache,
                 file_content=file_content,
                 **kwargs,
             )
+
+            # Handle tool execution if tools were called
+            if tool and response.tool_calls:
+                # Execute all tool calls
+                tool_results = self._execute_tools(
+                    response.tool_calls, kwargs.get("_tool_definitions", [])
+                )
+
+                # Make second call with tool results
+                # NOW we can use response_format to structure the final answer
+                final_response = self._do_prompt_with_retry(
+                    model=model,
+                    prompt=prompt,
+                    messages=self._build_tool_messages(prompt, response.tool_calls, tool_results),
+                    images=image_list,
+                    system_prompt=sys_prompt,
+                    response_format=response_format,  # Apply structured output to final answer
+                    cache=cache,
+                    file_content="",
+                    **{k: v for k, v in kwargs.items() if not k.startswith("_")},
+                )
+
+                # Attach tool execution metadata
+                final_response.tool_calls = response.tool_calls
+                final_response.tool_results = tool_results
+
+                # Use final response for conversation tracking
+                response = final_response
 
             # Create or update conversation ID
             if conversation_id is None and len(messages) > 0:
@@ -417,6 +492,96 @@ class BaseAIClient(abc.ABC):
             return self.conversations[conversation_id]["messages"].copy()
         return None
 
+    def _execute_tools(
+        self,
+        tool_calls: List[dict[str, Any]],
+        tool_definitions: List[dict[str, Any]],
+    ) -> List[dict[str, Any]]:
+        """
+        Execute tool calls and return results.
+
+        Args:
+            tool_calls: List of tool call dicts with 'id', 'name', 'arguments'
+            tool_definitions: List of tool definitions from registry
+
+        Returns:
+            List of tool result dicts with 'tool_call_id', 'content', 'is_error'
+        """
+        from .tools.executor_base import ToolExecutor
+
+        results = []
+        for tool_call in tool_calls:
+            # Find matching definition
+            tool_def = next(
+                (
+                    t
+                    for t in tool_definitions
+                    if t.get("function", t.get("name")) == tool_call["name"]
+                ),
+                None,
+            )
+
+            if not tool_def:
+                results.append(
+                    {
+                        "tool_call_id": tool_call.get("id", "unknown"),
+                        "content": f"Error: Tool '{tool_call['name']}' not found in registry",
+                        "is_error": True,
+                    }
+                )
+                continue
+
+            # Create executor and execute
+            try:
+                # Inject tool config if available
+                tool_name = tool_call["name"]
+                if tool_name in self.tool_config:
+                    tool_def = tool_def.copy()
+                    tool_def["config"] = self.tool_config[tool_name]
+
+                executor = ToolExecutor.create(tool_def)
+                content = executor.execute(tool_call["arguments"])
+                results.append(
+                    {
+                        "tool_call_id": tool_call.get("id", "unknown"),
+                        "content": content,
+                        "is_error": False,
+                    }
+                )
+            except Exception as e:
+                results.append(
+                    {
+                        "tool_call_id": tool_call.get("id", "unknown"),
+                        "content": f"Error: {str(e)}",
+                        "is_error": True,
+                    }
+                )
+
+        return results
+
+    @abc.abstractmethod
+    def _build_tool_messages(
+        self,
+        original_prompt: str,
+        tool_calls: List[dict[str, Any]],
+        tool_results: List[dict[str, Any]],
+    ) -> List[dict[str, Any]]:
+        """
+        Build message history with tool calls and results.
+
+        This method is provider-specific as each provider has different formats
+        for representing tool calls and results in conversation history.
+
+        Args:
+            original_prompt: The original user prompt
+            tool_calls: List of tool calls made by LLM
+            tool_results: List of tool execution results
+
+        Returns:
+            List of message dicts in provider-specific format
+        """
+        pass
+
     def __str__(self):
         """String representation of the AI client."""
         return self.PROVIDER_ID
@@ -429,6 +594,7 @@ def create_ai_client(
     base_url: Optional[str] = None,
     max_image_size: Optional[int] = 2048,
     image_quality: int = 85,
+    tool_config: Optional[dict] = None,
     **settings,
 ) -> BaseAIClient:
     """
@@ -441,6 +607,9 @@ def create_ai_client(
         base_url: Custom base URL for API (for OpenRouter, sciCORE, etc.)
         max_image_size: Maximum image dimension in pixels (None to disable, default 2048)
         image_quality: JPEG quality for resized images (1-100, default 85)
+        tool_config: Optional dict of tool configurations/credentials
+            Example: {"GeonamesAPI": {"api_key": "xyz"}, "WeatherAPI": {"endpoint": "..."}}
+            Tools can read from env vars by default, this allows programmatic override
         **settings: Additional provider-specific settings
 
     Returns:
@@ -467,6 +636,11 @@ def create_ai_client(
         >>> response, duration = client.prompt('gpt-4o', 'Compare image to description',
         ...                                    images=['photo.jpg'],
         ...                                    files=['description.txt'])
+
+        >>> # With tool config injection (for benchmarking systems)
+        >>> import os
+        >>> client = create_ai_client('openai', api_key=os.environ['OPENAI_API_KEY'],
+        ...                          tool_config={"WeatherAPI": {"api_key": os.environ['WEATHER_KEY']}})
     """
     from .openai_client import OpenAIClient
     from .gemini_client import GeminiClient
@@ -502,4 +676,6 @@ def create_ai_client(
         base_url = "https://llm-api-h200.ceda.unibas.ch/litellm"
 
     client_class = provider_map[provider]
-    return client_class(api_key, system_prompt, base_url, max_image_size, image_quality, **settings)
+    return client_class(
+        api_key, system_prompt, base_url, max_image_size, image_quality, tool_config, **settings
+    )

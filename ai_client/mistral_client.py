@@ -120,6 +120,13 @@ class MistralClient(BaseAIClient):
 
         params = {"messages": messages, "model": model}
 
+        # Add optional parameters if specified
+        optional_params = ["temperature", "max_tokens", "top_p"]
+        for param in optional_params:
+            value = kwargs.get(param, self.settings.get(param))
+            if value is not None:
+                params[param] = value
+
         # Handle structured output
         if response_format and hasattr(response_format, "model_json_schema"):
             schema = response_format.model_json_schema()
@@ -215,3 +222,16 @@ class MistralClient(BaseAIClient):
             model_list.append((model.id, None))
 
         return model_list
+
+    def _build_tool_messages(
+        self,
+        original_prompt: str,
+        tool_calls: List[dict],
+        tool_results: List[dict],
+    ) -> List[dict]:
+        """
+        Build tool messages for Mistral (not yet implemented).
+
+        Mistral does not currently support tool calling in this client.
+        """
+        raise NotImplementedError("Tool calling not yet implemented for Mistral")

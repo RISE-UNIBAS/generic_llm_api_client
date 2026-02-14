@@ -38,18 +38,22 @@ class ClaudeClient(BaseAIClient):
 
     PROVIDER_ID = "anthropic"
     SUPPORTS_MULTIMODAL = True  # Claude supports images
+    SUPPORTS_TOOLS = True  # Claude supports tool calling
 
     def _init_client(self):
         """Initialize the Anthropic client with the provided API key."""
         self.api_client = Anthropic(api_key=self.api_key, timeout=300.0)  # 5 minutes timeout
 
-    def _prepare_content_with_images(self, prompt: str, images: List[str]) -> List[dict]:
+    def _prepare_content_with_images(
+        self, prompt: str, images: List[str], cache_images: bool = False
+    ) -> List[dict]:
         """
         Prepare Anthropic content with text and images.
 
         Args:
             prompt: The text prompt
             images: List of image paths/URLs
+            cache_images: If True, mark ALL images with cache_control for prompt caching
 
         Returns:
             List of content blocks for Anthropic API
@@ -81,16 +85,21 @@ class ClaudeClient(BaseAIClient):
 
                 media_type = detect_image_mime_type(resource)
 
-                content.append(
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": base64_image,
-                        },
-                    }
-                )
+                image_block = {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": media_type,
+                        "data": base64_image,
+                    },
+                }
+
+                # Add cache_control if caching is enabled
+                if cache_images:
+                    image_block["cache_control"] = {"type": "ephemeral"}
+                    logger.info(f"Marking image for prompt caching: {resource}")
+
+                content.append(image_block)
             except Exception as e:
                 logger.error(f"Error processing image {resource}: {e}")
 
@@ -120,7 +129,7 @@ class ClaudeClient(BaseAIClient):
             images: List of image paths/URLs
             system_prompt: System prompt to use
             response_format: Optional Pydantic model for structured output
-            cache: Enable cache_control blocks for files
+            cache: Enable cache_control blocks for files and images
             file_content: File content to mark for caching (when cache=True)
             **kwargs: Additional Claude-specific parameters
 
@@ -180,16 +189,23 @@ class ClaudeClient(BaseAIClient):
 
                             media_type = detect_image_mime_type(resource)
 
-                            content_blocks.append(
-                                {
-                                    "type": "image",
-                                    "source": {
-                                        "type": "base64",
-                                        "media_type": media_type,
-                                        "data": base64_image,
-                                    },
-                                }
-                            )
+                            image_block = {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": media_type,
+                                    "data": base64_image,
+                                },
+                            }
+
+                            # Add cache_control if caching is enabled
+                            if cache:
+                                image_block["cache_control"] = {"type": "ephemeral"}
+                                logger.info(
+                                    f"Marking image for prompt caching in conversation: {resource}"
+                                )
+
+                            content_blocks.append(image_block)
                         except Exception as e:
                             logger.error(f"Error processing image {resource}: {e}")
 
@@ -199,7 +215,7 @@ class ClaudeClient(BaseAIClient):
                 api_messages.append({"role": msg["role"], "content": content_blocks})
         else:
             # Single-turn request
-            content = self._prepare_content_with_images(prompt, images)
+            content = self._prepare_content_with_images(prompt, images, cache_images=cache)
             api_messages = [{"role": "user", "content": content}]
 
         # Determine max_tokens based on model
@@ -232,6 +248,21 @@ class ClaudeClient(BaseAIClient):
             value = kwargs.get(param, self.settings.get(param))
             if value is not None:
                 params[param] = value
+
+        # Handle tool calling
+        tool_definitions = kwargs.pop("_tool_definitions", None)
+        if tool_definitions:
+            # Convert to Claude tools format
+            params["tools"] = [
+                {
+                    "name": tool.get("function", tool.get("name", "unknown")),
+                    "description": tool.get("description", ""),
+                    "input_schema": tool.get("parameters", {}),
+                }
+                for tool in tool_definitions
+            ]
+            # Let Claude decide whether to use tools (don't force it)
+            # params["tool_choice"] = {"type": "auto"}  # This is the default
 
         # Handle structured output using tools
         if response_format and hasattr(response_format, "model_json_schema"):
@@ -351,13 +382,22 @@ class ClaudeClient(BaseAIClient):
         Returns:
             LLMResponse object
         """
-        # Extract text from content blocks
+        # Extract text and tool calls from content blocks
         text = ""
+        tool_calls = []
         if raw_response.content:
             for block in raw_response.content:
                 if block.type == "text":
                     text = block.text
-                    break
+                elif block.type == "tool_use":
+                    # Claude uses tool_use blocks for tool calls
+                    tool_calls.append(
+                        {
+                            "id": block.id,
+                            "name": block.name,
+                            "arguments": block.input,
+                        }
+                    )
 
         # Try to extract JSON from text
         parsed_data = extract_json_from_text(text)
@@ -400,6 +440,7 @@ class ClaudeClient(BaseAIClient):
             usage=usage,
             raw_response=raw_response,
             parsed=parsed_data,
+            tool_calls=tool_calls if tool_calls else None,
         )
 
     def get_model_list(self) -> List[Tuple[str, Optional[str]]]:
@@ -423,3 +464,47 @@ class ClaudeClient(BaseAIClient):
             model_list.append((model.id, readable_date))
 
         return model_list
+
+    def _build_tool_messages(
+        self,
+        original_prompt: str,
+        tool_calls: List[dict],
+        tool_results: List[dict],
+    ) -> List[dict]:
+        """
+        Build Claude message format with tool calls and results.
+
+        Args:
+            original_prompt: The original user prompt
+            tool_calls: List of tool calls made by LLM
+            tool_results: List of tool execution results
+
+        Returns:
+            List of message dicts in Claude format
+        """
+        return [
+            {"role": "user", "content": original_prompt},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": tc["id"],
+                        "name": tc["name"],
+                        "input": tc["arguments"],
+                    }
+                    for tc in tool_calls
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": result["tool_call_id"],
+                        "content": result["content"],
+                    }
+                    for result in tool_results
+                ],
+            },
+        ]

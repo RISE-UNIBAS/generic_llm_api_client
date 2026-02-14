@@ -42,6 +42,7 @@ class OpenAIClient(BaseAIClient):
 
     PROVIDER_ID = "openai"
     SUPPORTS_MULTIMODAL = True
+    SUPPORTS_TOOLS = True
 
     def _init_client(self):
         """Initialize the OpenAI client with the provided API key and optional base URL."""
@@ -186,7 +187,6 @@ class OpenAIClient(BaseAIClient):
         params = {
             "model": model,
             "messages": api_messages,
-            "temperature": kwargs.get("temperature", self.settings.get("temperature", 0.5)),
         }
 
         # Add OpenAI caching parameters (from kwargs)
@@ -201,6 +201,7 @@ class OpenAIClient(BaseAIClient):
 
         # Add optional parameters if specified
         optional_params = [
+            "temperature",
             "max_tokens",
             "top_p",
             "frequency_penalty",
@@ -214,11 +215,31 @@ class OpenAIClient(BaseAIClient):
             if value is not None:
                 params[param] = value
 
+        # Handle tool calling
+        tool_definitions = kwargs.pop("_tool_definitions", None)
+        if tool_definitions:
+            # Convert to OpenAI tools format
+            params["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.get("function", tool.get("name", "unknown")),
+                        "description": tool.get("description", ""),
+                        "parameters": tool.get("parameters", {}),
+                    },
+                }
+                for tool in tool_definitions
+            ]
+            params["tool_choice"] = "auto"
+
         # Handle structured output
         if response_format:
-            # Check if it's a Pydantic model
-            if hasattr(response_format, "model_json_schema"):
-                # Use beta.chat.completions.parse for structured output
+            # Check if it's a Pydantic model (v1 or v2)
+            is_pydantic_v2 = hasattr(response_format, "model_json_schema")
+            is_pydantic_v1 = hasattr(response_format, "schema")
+
+            if is_pydantic_v2:
+                # Use beta.chat.completions.parse for Pydantic v2 structured output
                 try:
                     params["response_format"] = response_format
                     raw_response = self.api_client.beta.chat.completions.parse(**params)
@@ -227,11 +248,38 @@ class OpenAIClient(BaseAIClient):
                     logger.warning(f"Structured output failed, falling back to JSON mode: {e}")
                     # Fall through to JSON object mode
 
-            # Fallback to JSON object mode
+            # Fallback to JSON object mode (for Pydantic v1 or when v2 parse fails)
             params["response_format"] = {"type": "json_object"}
-            if hasattr(response_format, "model_json_schema"):
-                schema_prompt = f"\n\nYou MUST respond with valid JSON matching this exact schema: {json.dumps(response_format.model_json_schema())}"
-                params["messages"][0]["content"] += schema_prompt
+
+            # Get JSON schema (support both Pydantic v1 and v2)
+            if is_pydantic_v2:
+                schema_dict = response_format.model_json_schema()
+            elif is_pydantic_v1:
+                schema_dict = response_format.schema()
+            else:
+                schema_dict = None
+
+            if schema_dict:
+                schema_prompt = f"\n\nYou MUST respond with valid JSON matching this exact schema: {json.dumps(schema_dict)}"
+
+                # Find the last user message and append the schema prompt
+                last_user_idx = None
+                for i in range(len(params["messages"]) - 1, -1, -1):
+                    if params["messages"][i].get("role") == "user":
+                        last_user_idx = i
+                        break
+
+                if last_user_idx is not None:
+                    msg = params["messages"][last_user_idx]
+                    # Handle both string and array content
+                    if isinstance(msg["content"], str):
+                        msg["content"] += schema_prompt
+                    elif isinstance(msg["content"], list):
+                        # Content is an array (multimodal) - append text block
+                        msg["content"].append({"type": "text", "text": schema_prompt})
+                else:
+                    # No user message found, add a new one
+                    params["messages"].append({"role": "user", "content": schema_prompt})
 
         # Send the request to OpenAI
         raw_response = self.api_client.chat.completions.create(**params)
@@ -320,15 +368,37 @@ class OpenAIClient(BaseAIClient):
         text = choice.message.content or ""
         parsed_data = None
 
+        # Extract tool calls if present
+        tool_calls = None
+        if hasattr(choice.message, "tool_calls") and choice.message.tool_calls:
+            tool_calls = [
+                {
+                    "id": tc.id,
+                    "name": tc.function.name,
+                    "arguments": json.loads(tc.function.arguments),
+                }
+                for tc in choice.message.tool_calls
+            ]
+
         # Try to extract JSON from the response (works with or without response_format)
         extracted_json = extract_json_from_text(text)
 
-        # If response_format was provided, validate with Pydantic
-        if response_format and hasattr(response_format, "model_json_schema") and extracted_json:
+        # If response_format was provided, validate with Pydantic (v1 or v2)
+        is_pydantic = response_format and (
+            hasattr(response_format, "model_json_schema") or hasattr(response_format, "schema")
+        )
+
+        if is_pydantic and extracted_json:
             try:
-                # Validate with Pydantic
+                # Validate with Pydantic (works for both v1 and v2)
                 validated = response_format(**extracted_json)
-                text = validated.model_dump_json()
+                # Use appropriate dump method based on Pydantic version
+                if hasattr(validated, "model_dump_json"):
+                    # Pydantic v2
+                    text = validated.model_dump_json()
+                else:
+                    # Pydantic v1
+                    text = validated.json()
                 parsed_data = extracted_json
             except Exception as e:
                 logger.warning(f"Failed to validate structured response with Pydantic: {e}")
@@ -374,7 +444,7 @@ class OpenAIClient(BaseAIClient):
                 if costs is not None:
                     usage.input_cost_usd, usage.output_cost_usd, usage.estimated_cost_usd = costs
 
-        return LLMResponse(
+        response = LLMResponse(
             text=text,
             model=raw_response.model,
             provider=self.PROVIDER_ID,
@@ -382,7 +452,10 @@ class OpenAIClient(BaseAIClient):
             usage=usage,
             raw_response=raw_response,
             parsed=parsed_data,
+            tool_calls=tool_calls,
         )
+
+        return response
 
     def get_model_list(self) -> List[Tuple[str, Optional[str]]]:
         """
@@ -404,3 +477,47 @@ class OpenAIClient(BaseAIClient):
             model_list.append((model.id, readable_date))
 
         return model_list
+
+    def _build_tool_messages(
+        self,
+        original_prompt: str,
+        tool_calls: List[dict[str, Any]],
+        tool_results: List[dict[str, Any]],
+    ) -> List[dict[str, Any]]:
+        """
+        Build OpenAI message format with tool calls and results.
+
+        Args:
+            original_prompt: The original user prompt
+            tool_calls: List of tool calls made by LLM
+            tool_results: List of tool execution results
+
+        Returns:
+            List of message dicts in OpenAI format
+        """
+        return [
+            {"role": "user", "content": original_prompt},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": json.dumps(tc["arguments"]),
+                        },
+                    }
+                    for tc in tool_calls
+                ],
+            },
+            *[
+                {
+                    "role": "tool",
+                    "tool_call_id": result["tool_call_id"],
+                    "content": result["content"],
+                }
+                for result in tool_results
+            ],
+        ]

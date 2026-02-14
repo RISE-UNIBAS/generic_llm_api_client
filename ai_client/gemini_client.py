@@ -294,3 +294,16 @@ class GeminiClient(BaseAIClient):
             logger.error(f"Error listing Gemini models: {e}")
 
         return model_list
+
+    def _build_tool_messages(
+        self,
+        original_prompt: str,
+        tool_calls: List[dict],
+        tool_results: List[dict],
+    ) -> List[dict]:
+        """
+        Build tool messages for Gemini (not yet implemented).
+
+        Gemini does not currently support tool calling in this client.
+        """
+        raise NotImplementedError("Tool calling not yet implemented for Gemini")
