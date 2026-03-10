@@ -17,6 +17,7 @@ from .utils import (
     read_text_files,
     resize_image_if_needed,
 )
+from .content_order import ContentOrder, SLOT_PROMPT, SLOT_IMAGES, SLOT_FILES
 
 
 class BaseAIClient(abc.ABC):
@@ -56,6 +57,7 @@ class BaseAIClient(abc.ABC):
         max_image_size: Optional[int] = 2048,
         image_quality: int = 85,
         tool_config: Optional[dict] = None,
+        content_order: Optional[Union[str, List[str], ContentOrder]] = None,
         **settings,
     ):
         """
@@ -70,6 +72,12 @@ class BaseAIClient(abc.ABC):
             tool_config: Optional dict of tool configurations/credentials
                 Example: {"GeonamesAPI": {"api_key": "xyz"}, "WeatherAPI": {"endpoint": "..."}}
                 Tools can read from env vars by default, this allows programmatic override
+            content_order: Controls the ordering of content parts (prompt, images, files) in
+                requests. Accepts a ContentOrder policy string, or a list of slot names for
+                fine-grained control. None / ContentOrder.DEFAULT preserves natural ordering.
+                Examples:
+                    content_order='attachments_before_prompt'
+                    content_order=['images', 'prompt', 'files']
             **settings: Additional provider-specific settings like temperature, max_tokens, etc.
         """
         self.init_time = time.time()
@@ -81,6 +89,7 @@ class BaseAIClient(abc.ABC):
         self.base_url = base_url
         self.max_image_size = max_image_size
         self.image_quality = image_quality
+        self.content_order = content_order
         self.settings = settings
         self.api_client = None
 
@@ -140,6 +149,83 @@ class BaseAIClient(abc.ABC):
         """
         return resource.startswith(("http://", "https://"))
 
+    def _resolve_content_order(
+        self, order: Optional[Union[str, List[str], ContentOrder]] = None
+    ) -> List[str]:
+        """
+        Normalise a content_order value to a canonical slot list.
+
+        Args:
+            order: A ContentOrder policy, a list of slot name strings, or None.
+                   When None the client-level ``self.content_order`` is used.
+
+        Returns:
+            An ordered list of slot name strings, e.g. ["prompt", "images", "files"].
+            Unrecognised policy strings fall back to the default ordering.
+        """
+        effective = order if order is not None else self.content_order
+
+        if effective is None or effective == ContentOrder.DEFAULT or effective == "default":
+            # Default: prompt → files → images  (mirrors historical "prompt + file_text, images" ordering)
+            return [SLOT_PROMPT, SLOT_FILES, SLOT_IMAGES]
+
+        if isinstance(effective, (list, tuple)):
+            return list(effective)
+
+        if effective in (ContentOrder.PROMPT_BEFORE_ATTACHMENTS, "prompt_before_attachments"):
+            return [SLOT_PROMPT, SLOT_IMAGES, SLOT_FILES]
+
+        if effective in (ContentOrder.ATTACHMENTS_BEFORE_PROMPT, "attachments_before_prompt"):
+            return [SLOT_IMAGES, SLOT_FILES, SLOT_PROMPT]
+
+        # Unknown value — fall back to default
+        return [SLOT_PROMPT, SLOT_FILES, SLOT_IMAGES]
+
+    def _order_content_parts(
+        self,
+        parts_by_type: dict,
+        content_order: Optional[Union[str, List[str], ContentOrder]] = None,
+    ) -> list:
+        """
+        Assemble a flat list of content parts in the requested order.
+
+        Args:
+            parts_by_type: Mapping of slot name → list of provider-specific content
+                           blocks for that slot.  Empty lists are silently skipped.
+                           Example::
+
+                               {
+                                   "prompt": [{"type": "text", "text": "..."}],
+                                   "images": [{"type": "image_url", ...}],
+                                   "files":  [{"type": "text", "text": "..."}],
+                               }
+
+            content_order: Per-call override.  Falls back to ``self.content_order``
+                           when None.
+
+        Returns:
+            Flat list of content blocks in the resolved order.  Any slot absent
+            from the ordering policy is appended at the end in insertion order,
+            so unrecognised future attachment types degrade gracefully.
+        """
+        slot_order = self._resolve_content_order(content_order)
+
+        result = []
+        mentioned: set = set()
+
+        for slot in slot_order:
+            parts = parts_by_type.get(slot)
+            if parts:
+                result.extend(parts)
+                mentioned.add(slot)
+
+        # Append any slot not covered by the policy (graceful fallback for future types)
+        for slot, parts in parts_by_type.items():
+            if slot not in mentioned and parts:
+                result.extend(parts)
+
+        return result
+
     def prompt(
         self,
         model: str,
@@ -151,6 +237,7 @@ class BaseAIClient(abc.ABC):
         conversation_id: Optional[str] = None,
         cache: bool = False,
         tool: Optional[Union[str, List[str]]] = None,
+        content_order: Optional[Union[str, List[str], ContentOrder]] = None,
         **kwargs,
     ) -> LLMResponse:
         """
@@ -167,6 +254,9 @@ class BaseAIClient(abc.ABC):
             cache: Enable caching for large prompts/files (provider-specific implementation)
             tool: Optional tool name(s) from registry. Single string or list of strings.
                 Example: "GeonamesSearch" or ["GeonamesSearch", "WikidataSearch"]
+            content_order: Override the client-level content_order for this request only.
+                Accepts a ContentOrder policy string or a list of slot names.
+                Example: ['images', 'prompt', 'files']
             **kwargs: Additional provider-specific parameters
                 Common: temperature, max_tokens, top_p
                 OpenAI: prompt_cache_key, prompt_cache_retention
@@ -192,16 +282,18 @@ class BaseAIClient(abc.ABC):
         # Use provided system prompt or fall back to default
         sys_prompt = system_prompt or self.system_prompt
 
-        # Handle text files
+        # Handle text files — kept separate so they form an independent "files" content slot
+        # that can be positioned relative to other parts via content_order.
+        # (Claude with cache is the only exception: _do_prompt puts files in the system block.)
         file_list = files or []
         file_content = ""
         if file_list:
             file_content = read_text_files(file_list)
-            # For caching mode with Claude, keep content separate
-            # Other providers append files to prompt
-            if not (cache and self.PROVIDER_ID == "anthropic"):
-                # Append to prompt as usual (backward-compatible)
-                prompt = prompt + file_content
+
+        # Resolve effective content_order (per-request overrides client-level)
+        effective_content_order = content_order if content_order is not None else self.content_order
+        if effective_content_order is not None:
+            kwargs["_content_order"] = effective_content_order
 
         # Handle conversation continuation
         messages = []
@@ -387,6 +479,7 @@ class BaseAIClient(abc.ABC):
         response_format: Optional[Any] = None,
         conversation_id: Optional[str] = None,
         cache: bool = False,
+        content_order: Optional[Union[str, List[str], ContentOrder]] = None,
         **kwargs,
     ) -> LLMResponse:
         """
@@ -419,6 +512,7 @@ class BaseAIClient(abc.ABC):
                 response_format=response_format,
                 conversation_id=conversation_id,
                 cache=cache,
+                content_order=content_order,
                 **kwargs,
             ),
         )
@@ -595,6 +689,7 @@ def create_ai_client(
     max_image_size: Optional[int] = 2048,
     image_quality: int = 85,
     tool_config: Optional[dict] = None,
+    content_order: Optional[Union[str, List[str], "ContentOrder"]] = None,
     **settings,
 ) -> BaseAIClient:
     """
@@ -677,5 +772,6 @@ def create_ai_client(
 
     client_class = provider_map[provider]
     return client_class(
-        api_key, system_prompt, base_url, max_image_size, image_quality, tool_config, **settings
+        api_key, system_prompt, base_url, max_image_size, image_quality, tool_config, content_order,
+        **settings,
     )

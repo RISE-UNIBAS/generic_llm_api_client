@@ -59,40 +59,43 @@ class OpenAIClient(BaseAIClient):
         self.api_client = OpenAI(**kwargs)
 
     def _prepare_message_with_images(
-        self, prompt: str, images: List[str], system_prompt: str
+        self,
+        prompt: str,
+        images: List[str],
+        system_prompt: str,
+        file_content: str = "",
+        content_order=None,
     ) -> List[dict]:
         """
-        Prepare an OpenAI message object with text and images.
+        Prepare an OpenAI message object with text, files, and images.
 
         Args:
             prompt: The text prompt
             images: List of image paths/URLs
             system_prompt: System prompt
+            file_content: Text content from files (empty string if none)
+            content_order: Content ordering policy override
 
         Returns:
             List of OpenAI message objects with content
         """
-        # Prepare user content with text
-        user_content = [{"type": "text", "text": prompt}]
+        prompt_parts = [{"type": "text", "text": prompt}]
+        files_parts = [{"type": "text", "text": file_content}] if file_content else []
+        image_parts = []
 
-        # Add images if any
         for resource in images:
             if self.is_url(resource):
-                # For URLs, directly use the URL in the prompt
-                user_content.append({"type": "image_url", "image_url": {"url": resource}})
+                image_parts.append({"type": "image_url", "image_url": {"url": resource}})
             else:
-                # For local files, read and encode as base64
                 try:
                     with open(resource, "rb") as image_file:
                         image_data = image_file.read()
                         base64_image = base64.b64encode(image_data).decode("utf-8")
 
-                    # Detect MIME type from file extension
                     from .utils import detect_image_mime_type
 
                     mime_type = detect_image_mime_type(resource)
-
-                    user_content.append(
+                    image_parts.append(
                         {
                             "type": "image_url",
                             "image_url": {"url": f"data:{mime_type};base64,{base64_image}"},
@@ -101,7 +104,11 @@ class OpenAIClient(BaseAIClient):
                 except Exception as e:
                     logger.error(f"Error reading image file {resource}: {e}")
 
-        # Return the complete message structure
+        user_content = self._order_content_parts(
+            {"prompt": prompt_parts, "images": image_parts, "files": files_parts},
+            content_order,
+        )
+
         return [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
@@ -142,6 +149,8 @@ class OpenAIClient(BaseAIClient):
         """
         # Handle conversation messages
         images = images or []
+        content_order = kwargs.pop("_content_order", None)
+
         if messages and len(messages) > 1:
             # Multi-turn conversation: use provided messages
             api_messages = []
@@ -150,14 +159,15 @@ class OpenAIClient(BaseAIClient):
             if system_prompt:
                 api_messages.append({"role": "system", "content": system_prompt})
 
-            # Add conversation messages, attaching images to the last user message
+            # Add conversation messages, attaching images and files to the last user message
             for i, msg in enumerate(messages):
-                if msg["role"] == "user" and i == len(messages) - 1 and images:
-                    # Last user message - add images
-                    content = [{"type": "text", "text": msg["content"]}]
+                if msg["role"] == "user" and i == len(messages) - 1 and (images or file_content):
+                    image_parts = []
                     for resource in images:
                         if self.is_url(resource):
-                            content.append({"type": "image_url", "image_url": {"url": resource}})
+                            image_parts.append(
+                                {"type": "image_url", "image_url": {"url": resource}}
+                            )
                         else:
                             try:
                                 with open(resource, "rb") as image_file:
@@ -166,7 +176,7 @@ class OpenAIClient(BaseAIClient):
                                 from .utils import detect_image_mime_type
 
                                 mime_type = detect_image_mime_type(resource)
-                                content.append(
+                                image_parts.append(
                                     {
                                         "type": "image_url",
                                         "image_url": {
@@ -176,12 +186,26 @@ class OpenAIClient(BaseAIClient):
                                 )
                             except Exception as e:
                                 logger.error(f"Error reading image file {resource}: {e}")
+
+                    files_parts = (
+                        [{"type": "text", "text": file_content}] if file_content else []
+                    )
+                    content = self._order_content_parts(
+                        {
+                            "prompt": [{"type": "text", "text": msg["content"]}],
+                            "images": image_parts,
+                            "files": files_parts,
+                        },
+                        content_order,
+                    )
                     api_messages.append({"role": msg["role"], "content": content})
                 else:
                     api_messages.append(msg)
         else:
-            # Single-turn request: use original method
-            api_messages = self._prepare_message_with_images(prompt, images, system_prompt)
+            # Single-turn request
+            api_messages = self._prepare_message_with_images(
+                prompt, images, system_prompt, file_content, content_order
+            )
 
         # Extract OpenAI-specific parameters from settings and kwargs
         params = {

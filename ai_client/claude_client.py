@@ -45,26 +45,33 @@ class ClaudeClient(BaseAIClient):
         self.api_client = Anthropic(api_key=self.api_key, timeout=300.0)  # 5 minutes timeout
 
     def _prepare_content_with_images(
-        self, prompt: str, images: List[str], cache_images: bool = False
+        self,
+        prompt: str,
+        images: List[str],
+        cache_images: bool = False,
+        file_content: str = "",
+        content_order=None,
     ) -> List[dict]:
         """
-        Prepare Anthropic content with text and images.
+        Prepare Anthropic content with text, files, and images.
 
         Args:
             prompt: The text prompt
             images: List of image paths/URLs
             cache_images: If True, mark ALL images with cache_control for prompt caching
+            file_content: Text content from files (empty string if none)
+            content_order: Content ordering policy override
 
         Returns:
             List of content blocks for Anthropic API
         """
-        content = [{"type": "text", "text": prompt}]
+        prompt_parts = [{"type": "text", "text": prompt}]
+        files_parts = [{"type": "text", "text": file_content}] if file_content else []
+        image_parts = []
 
-        # Add images if any
         for resource in images:
             try:
                 if self.is_url(resource):
-                    # For URLs, we need to fetch and encode
                     import requests
 
                     response = requests.get(resource)
@@ -76,11 +83,9 @@ class ClaudeClient(BaseAIClient):
                         )
                         continue
                 else:
-                    # For local files, read and encode
                     with open(resource, "rb") as image_file:
                         base64_image = base64.b64encode(image_file.read()).decode("utf-8")
 
-                # Detect media type from file extension
                 from .utils import detect_image_mime_type
 
                 media_type = detect_image_mime_type(resource)
@@ -94,16 +99,18 @@ class ClaudeClient(BaseAIClient):
                     },
                 }
 
-                # Add cache_control if caching is enabled
                 if cache_images:
                     image_block["cache_control"] = {"type": "ephemeral"}
                     logger.info(f"Marking image for prompt caching: {resource}")
 
-                content.append(image_block)
+                image_parts.append(image_block)
             except Exception as e:
                 logger.error(f"Error processing image {resource}: {e}")
 
-        return content
+        return self._order_content_parts(
+            {"prompt": prompt_parts, "images": image_parts, "files": files_parts},
+            content_order,
+        )
 
     def _do_prompt(
         self,
@@ -137,19 +144,24 @@ class ClaudeClient(BaseAIClient):
             LLMResponse object with the provider's response
         """
         images = images or []
+        content_order = kwargs.pop("_content_order", None)
 
         # Build system blocks with optional caching
         system_blocks = []
 
-        # Add cached content FIRST (Claude caches trailing system blocks)
+        # When caching is active, files go to the system block (Claude-specific behaviour).
+        # Otherwise they are passed as a "files" user-content slot below.
+        file_content_for_user = ""
         if file_content and cache:
             system_blocks.append(
                 {
                     "type": "text",
                     "text": f"Reference documents:\n\n{file_content}",
-                    "cache_control": {"type": "ephemeral"},  # Mark for caching
+                    "cache_control": {"type": "ephemeral"},
                 }
             )
+        else:
+            file_content_for_user = file_content
 
         # Add system prompt (not cached by default)
         if system_prompt:
@@ -160,10 +172,10 @@ class ClaudeClient(BaseAIClient):
             # Multi-turn conversation
             api_messages = []
             for i, msg in enumerate(messages):
-                content_blocks = []
-
-                # Add images to last user message only
-                if msg["role"] == "user" and i == len(messages) - 1 and images:
+                if msg["role"] == "user" and i == len(messages) - 1 and (
+                    images or file_content_for_user
+                ):
+                    image_parts = []
                     for resource in images:
                         try:
                             if self.is_url(resource):
@@ -198,24 +210,38 @@ class ClaudeClient(BaseAIClient):
                                 },
                             }
 
-                            # Add cache_control if caching is enabled
                             if cache:
                                 image_block["cache_control"] = {"type": "ephemeral"}
                                 logger.info(
                                     f"Marking image for prompt caching in conversation: {resource}"
                                 )
 
-                            content_blocks.append(image_block)
+                            image_parts.append(image_block)
                         except Exception as e:
                             logger.error(f"Error processing image {resource}: {e}")
 
-                # Add text content
-                content_blocks.append({"type": "text", "text": msg["content"]})
-
-                api_messages.append({"role": msg["role"], "content": content_blocks})
+                    files_parts = (
+                        [{"type": "text", "text": file_content_for_user}]
+                        if file_content_for_user
+                        else []
+                    )
+                    content_blocks = self._order_content_parts(
+                        {
+                            "prompt": [{"type": "text", "text": msg["content"]}],
+                            "images": image_parts,
+                            "files": files_parts,
+                        },
+                        content_order,
+                    )
+                    api_messages.append({"role": msg["role"], "content": content_blocks})
+                else:
+                    api_messages.append(msg)
         else:
             # Single-turn request
-            content = self._prepare_content_with_images(prompt, images, cache_images=cache)
+            content = self._prepare_content_with_images(
+                prompt, images, cache_images=cache,
+                file_content=file_content_for_user, content_order=content_order,
+            )
             api_messages = [{"role": "user", "content": content}]
 
         # Determine max_tokens based on model

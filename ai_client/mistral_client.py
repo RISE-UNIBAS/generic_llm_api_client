@@ -42,42 +42,50 @@ class MistralClient(BaseAIClient):
         """Initialize the Mistral client with the provided API key."""
         self.api_client = Mistral(api_key=self.api_key)
 
-    def _prepare_content_with_images(self, prompt: str, images: List[str]) -> List[dict]:
+    def _prepare_content_with_images(
+        self,
+        prompt: str,
+        images: List[str],
+        file_content: str = "",
+        content_order=None,
+    ) -> List[dict]:
         """
-        Prepare Mistral content with text and images.
+        Prepare Mistral content with text, files, and images.
 
         Args:
             prompt: The text prompt
             images: List of image paths/URLs
+            file_content: Text content from files (empty string if none)
+            content_order: Content ordering policy override
 
         Returns:
             List of content blocks for Mistral API
         """
-        content = [{"type": "text", "text": prompt}]
+        prompt_parts = [{"type": "text", "text": prompt}]
+        files_parts = [{"type": "text", "text": file_content}] if file_content else []
+        image_parts = []
 
-        # Add images if any
         for resource in images:
             try:
                 if self.is_url(resource):
-                    # For URLs, use directly
                     data_uri = resource
                 else:
-                    # For local files, encode as base64
                     with open(resource, "rb") as image_file:
                         base64_image = base64.b64encode(image_file.read()).decode("utf-8")
 
-                        # Detect MIME type from file extension
                         from .utils import detect_image_mime_type
 
                         mime_type = detect_image_mime_type(resource)
-
                         data_uri = f"data:{mime_type};base64,{base64_image}"
 
-                content.append({"type": "image_url", "image_url": {"url": data_uri}})
+                image_parts.append({"type": "image_url", "image_url": {"url": data_uri}})
             except Exception as e:
                 logger.error(f"Error processing image {resource}: {e}")
 
-        return content
+        return self._order_content_parts(
+            {"prompt": prompt_parts, "images": image_parts, "files": files_parts},
+            content_order,
+        )
 
     def _do_prompt(
         self,
@@ -108,8 +116,12 @@ class MistralClient(BaseAIClient):
         Returns:
             LLMResponse object with the provider's response
         """
-        # Prepare content with images
-        content = self._prepare_content_with_images(prompt, images)
+        content_order = kwargs.pop("_content_order", None)
+
+        # Prepare content with images and files
+        content = self._prepare_content_with_images(
+            prompt, images, file_content=file_content, content_order=content_order
+        )
 
         # Build messages
         messages = [{"role": "user", "content": content}]

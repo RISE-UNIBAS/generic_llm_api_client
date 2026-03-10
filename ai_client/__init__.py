@@ -25,6 +25,7 @@ Technical implementation details:
 """
 
 from .base_client import BaseAIClient, create_ai_client
+from .content_order import ContentOrder, SLOT_PROMPT, SLOT_IMAGES, SLOT_FILES
 from .openai_client import OpenAIClient
 from .gemini_client import GeminiClient
 from .claude_client import ClaudeClient
@@ -50,6 +51,11 @@ __all__ = [
     # Core classes
     "BaseAIClient",
     "create_ai_client",
+    # Content ordering
+    "ContentOrder",
+    "SLOT_PROMPT",
+    "SLOT_IMAGES",
+    "SLOT_FILES",
     # Provider-specific clients
     "OpenAIClient",
     "GeminiClient",

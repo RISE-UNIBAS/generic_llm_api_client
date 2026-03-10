@@ -43,24 +43,32 @@ class GeminiClient(BaseAIClient):
         """Initialize Gemini API client with the provided API key."""
         self.api_client = genai.Client(api_key=self.api_key)
 
-    def _prepare_content_with_images(self, prompt: str, images: List[str]) -> List[Any]:
+    def _prepare_content_with_images(
+        self,
+        prompt: str,
+        images: List[str],
+        file_content: str = "",
+        content_order=None,
+    ) -> List[Any]:
         """
-        Prepare Gemini content with text and images.
+        Prepare Gemini content with text, files, and images.
 
         Args:
-            prompt: The text prompt
+            prompt: The text prompt (may already include system prefix)
             images: List of image paths/URLs
+            file_content: Text content from files (empty string if none)
+            content_order: Content ordering policy override
 
         Returns:
-            List of content parts for Gemini API
+            List of content parts for Gemini API (strings and Part objects)
         """
-        contents = [prompt]
+        prompt_parts = [prompt]
+        files_parts = [file_content] if file_content else []
+        image_parts = []
 
-        # Add images if any
         for resource in images:
             try:
                 if self.is_url(resource):
-                    # For URLs, fetch the image
                     response = requests.get(resource)
                     if response.status_code == 200:
                         image_data = response.content
@@ -70,27 +78,28 @@ class GeminiClient(BaseAIClient):
                         )
                         continue
                 else:
-                    # For local files, read the image
                     with open(resource, "rb") as f:
                         image_data = f.read()
 
-                # Detect MIME type from file extension
                 from .utils import detect_image_mime_type
 
                 mime_type = detect_image_mime_type(resource)
 
-                # Create image part
-                image_part = Part(
-                    inline_data={
-                        "mime_type": mime_type,
-                        "data": base64.b64encode(image_data).decode("utf-8"),
-                    }
+                image_parts.append(
+                    Part(
+                        inline_data={
+                            "mime_type": mime_type,
+                            "data": base64.b64encode(image_data).decode("utf-8"),
+                        }
+                    )
                 )
-                contents.append(image_part)
             except Exception as e:
                 logger.error(f"Error processing image {resource}: {e}")
 
-        return contents
+        return self._order_content_parts(
+            {"prompt": prompt_parts, "images": image_parts, "files": files_parts},
+            content_order,
+        )
 
     @staticmethod
     def _remove_defaults_from_schema(schema):
@@ -136,11 +145,15 @@ class GeminiClient(BaseAIClient):
         Returns:
             LLMResponse object with the provider's response
         """
+        content_order = kwargs.pop("_content_order", None)
+
         # Prepend system prompt to user prompt for Gemini
         full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
 
-        # Prepare content with images
-        contents = self._prepare_content_with_images(full_prompt, images)
+        # Prepare content with images and files
+        contents = self._prepare_content_with_images(
+            full_prompt, images, file_content=file_content, content_order=content_order
+        )
 
         # Build generation config
         generation_config = {}

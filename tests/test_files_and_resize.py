@@ -309,15 +309,15 @@ class TestClientWithFiles:
         # Check that we have multimodal content
         user_content = messages[1]["content"]
         if isinstance(user_content, list):
-            # Multimodal format
+            # Multimodal format — files and prompt are now separate text blocks
             text_parts = [c for c in user_content if c.get("type") == "text"]
             image_parts = [c for c in user_content if c.get("type") == "image_url"]
             assert len(text_parts) > 0
             assert len(image_parts) > 0
-            # File content should be in text
-            text_content = text_parts[0]["text"]
-            assert "description.txt" in text_content
-            assert "Image description" in text_content
+            # File content appears in one of the text blocks (may be separate from prompt)
+            all_text = " ".join(p["text"] for p in text_parts)
+            assert "description.txt" in all_text
+            assert "Image description" in all_text
         else:
             # Text format (files appended to prompt)
             assert "description.txt" in user_content
