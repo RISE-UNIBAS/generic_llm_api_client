@@ -172,8 +172,10 @@ class ClaudeClient(BaseAIClient):
             # Multi-turn conversation
             api_messages = []
             for i, msg in enumerate(messages):
-                if msg["role"] == "user" and i == len(messages) - 1 and (
-                    images or file_content_for_user
+                if (
+                    msg["role"] == "user"
+                    and i == len(messages) - 1
+                    and (images or file_content_for_user)
                 ):
                     image_parts = []
                     for resource in images:
@@ -239,8 +241,11 @@ class ClaudeClient(BaseAIClient):
         else:
             # Single-turn request
             content = self._prepare_content_with_images(
-                prompt, images, cache_images=cache,
-                file_content=file_content_for_user, content_order=content_order,
+                prompt,
+                images,
+                cache_images=cache,
+                file_content=file_content_for_user,
+                content_order=content_order,
             )
             api_messages = [{"role": "user", "content": content}]
 

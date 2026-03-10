@@ -772,6 +772,12 @@ def create_ai_client(
 
     client_class = provider_map[provider]
     return client_class(
-        api_key, system_prompt, base_url, max_image_size, image_quality, tool_config, content_order,
+        api_key,
+        system_prompt,
+        base_url,
+        max_image_size,
+        image_quality,
+        tool_config,
+        content_order,
         **settings,
     )

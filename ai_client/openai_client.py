@@ -187,9 +187,7 @@ class OpenAIClient(BaseAIClient):
                             except Exception as e:
                                 logger.error(f"Error reading image file {resource}: {e}")
 
-                    files_parts = (
-                        [{"type": "text", "text": file_content}] if file_content else []
-                    )
+                    files_parts = [{"type": "text", "text": file_content}] if file_content else []
                     content = self._order_content_parts(
                         {
                             "prompt": [{"type": "text", "text": msg["content"]}],
