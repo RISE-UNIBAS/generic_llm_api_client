@@ -744,6 +744,7 @@ def create_ai_client(
     from .deepseek_client import DeepSeekClient
     from .qwen_client import QwenClient
     from .cohere_client import CohereClient
+    from .grok_client import GrokClient
 
     provider_map = {
         "openai": OpenAIClient,
@@ -754,6 +755,7 @@ def create_ai_client(
         "deepseek": DeepSeekClient,
         "qwen": QwenClient,
         "cohere": CohereClient,
+        "grok": GrokClient,
         "openrouter": OpenAIClient,  # Uses OpenAI-compatible API
         "scicore": OpenAIClient,  # Uses OpenAI-compatible API
     }
