@@ -21,6 +21,7 @@ Technical implementation details:
 - Cohere: Uses the chat API (ClientV2) with vision model support for multimodal content
 - DeepSeek: OpenAI-compatible API with custom base URL
 - Qwen: OpenAI-compatible API with custom base URL
+- Grok: OpenAI-compatible API with xAI base URL
 - OpenRouter/sciCORE: Use OpenAI client with custom base URLs
 """
 
@@ -33,6 +34,7 @@ from .mistral_client import MistralClient
 from .deepseek_client import DeepSeekClient
 from .qwen_client import QwenClient
 from .cohere_client import CohereClient
+from .grok_client import GrokClient
 from .response import LLMResponse, Usage
 from .pricing import set_pricing_file
 from .utils import (
@@ -45,7 +47,7 @@ from .utils import (
     APIError,
 )
 
-__version__ = "0.3.4"
+__version__ = "0.3.5"
 
 __all__ = [
     # Core classes
@@ -64,6 +66,7 @@ __all__ = [
     "DeepSeekClient",
     "QwenClient",
     "CohereClient",
+    "GrokClient",
     # Response and utility classes
     "LLMResponse",
     "Usage",
