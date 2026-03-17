@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "generic-llm-api-client"
-version = "0.3.6"
+version = "0.3.7"
 description = "A unified, provider-agnostic Python client for multiple LLM APIs"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -47,11 +47,11 @@ classifiers = [
 dependencies = [
     "anthropic~=0.84.0",
     "openai~=2.26.0",
-    "mistralai~=1.12.4",
-    "google-genai~=1.66.0",
+    "mistralai~=2.0.4",
+    "google-genai~=1.67.0",
     "cohere~=5.20.7",
     "requests~=2.32.5",
-    "geonamescache~=1.6.0",
+    "geonamescache~=3.0.0",
 ]
 
 [project.optional-dependencies]

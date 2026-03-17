@@ -247,7 +247,9 @@ class OpenAIClient(BaseAIClient):
         if api_style == "completions":
             return self._do_completions_api(params, model, response_format)
         if api_style == "responses":
-            return self._do_responses_api(params, model, prompt, system_prompt, response_format, kwargs)
+            return self._do_responses_api(
+                params, model, prompt, system_prompt, response_format, kwargs
+            )
 
         # Handle tool calling
         tool_definitions = kwargs.pop("_tool_definitions", None)
@@ -285,7 +287,9 @@ class OpenAIClient(BaseAIClient):
                             f"falling back to v1/completions: {e}"
                         )
                         params.pop("response_format", None)
-                        return self._do_completions_api(params, model, response_format)  # auto-fallback
+                        return self._do_completions_api(
+                            params, model, response_format
+                        )  # auto-fallback
                     logger.warning(f"Structured output failed, falling back to JSON mode: {e}")
                     # Fall through to JSON object mode
 
