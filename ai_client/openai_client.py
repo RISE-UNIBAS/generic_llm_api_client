@@ -248,7 +248,7 @@ class OpenAIClient(BaseAIClient):
             return self._do_completions_api(params, model, response_format)
         if api_style == "responses":
             return self._do_responses_api(
-                params, model, prompt, system_prompt, response_format, kwargs
+                params, model, prompt, images, system_prompt, response_format, kwargs
             )
 
         # Handle tool calling
@@ -346,6 +346,7 @@ class OpenAIClient(BaseAIClient):
         params: dict,
         model: str,
         prompt: str,
+        images: List[str],
         system_prompt: Optional[str],
         response_format: Optional[Any],
         extra_kwargs: dict,
@@ -353,10 +354,37 @@ class OpenAIClient(BaseAIClient):
         """
         Call v1/responses (Responses API) for models like Codex, o3, o4-mini.
 
-        The Responses API uses ``input`` instead of ``messages``, ``instructions``
-        instead of a system role, and ``max_output_tokens`` instead of ``max_tokens``.
+        Key differences from chat completions:
+        - ``input`` instead of ``messages`` (string or array of input items)
+        - ``instructions`` instead of a system role message
+        - ``max_output_tokens`` instead of ``max_tokens``
+        - Content type literals: ``input_text`` / ``input_image`` (not ``text`` / ``image_url``)
+        - Image URL is a flat string field, not nested under ``image_url.url``
         """
-        responses_params: dict = {"model": model, "input": prompt}
+        # Build the input: plain string for text-only, message array for multimodal
+        if images:
+            content = [{"type": "input_text", "text": prompt}]
+            for resource in images:
+                if self.is_url(resource):
+                    content.append({"type": "input_image", "image_url": resource})
+                else:
+                    try:
+                        with open(resource, "rb") as f:
+                            image_data = f.read()
+                        base64_image = base64.b64encode(image_data).decode("utf-8")
+                        from .utils import detect_image_mime_type
+                        mime_type = detect_image_mime_type(resource)
+                        content.append({
+                            "type": "input_image",
+                            "image_url": f"data:{mime_type};base64,{base64_image}",
+                        })
+                    except Exception as e:
+                        logger.error(f"Error reading image file {resource}: {e}")
+            input_value = [{"type": "message", "role": "user", "content": content}]
+        else:
+            input_value = prompt
+
+        responses_params: dict = {"model": model, "input": input_value}
 
         if system_prompt:
             responses_params["instructions"] = system_prompt
