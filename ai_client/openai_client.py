@@ -141,6 +141,8 @@ class OpenAIClient(BaseAIClient):
             cache: Informational only (caching is always automatic)
             file_content: Not used (files already appended to prompt)
             **kwargs: Additional OpenAI-specific parameters
+                completions_api: If True, use v1/completions instead of v1/chat/completions.
+                    Can also be set once at client level via settings["completions_api"].
                 prompt_cache_key: Routing hint for cache optimization
                 prompt_cache_retention: "in_memory" (5-10min) or "24h"
 
@@ -150,6 +152,7 @@ class OpenAIClient(BaseAIClient):
         # Handle conversation messages
         images = images or []
         content_order = kwargs.pop("_content_order", None)
+        completions_api = kwargs.pop("completions_api", self.settings.get("completions_api", False))
 
         if messages and len(messages) > 1:
             # Multi-turn conversation: use provided messages
@@ -237,6 +240,10 @@ class OpenAIClient(BaseAIClient):
             if value is not None:
                 params[param] = value
 
+        # Route directly to v1/completions when requested
+        if completions_api:
+            return self._do_completions_api(params, model, response_format)
+
         # Handle tool calling
         tool_definitions = kwargs.pop("_tool_definitions", None)
         if tool_definitions:
@@ -267,6 +274,13 @@ class OpenAIClient(BaseAIClient):
                     raw_response = self.api_client.beta.chat.completions.parse(**params)
                     return self._create_response_from_parsed(raw_response, model)
                 except Exception as e:
+                    if self._is_non_chat_model_error(e):
+                        logger.warning(
+                            f"Model {model} does not support chat completions, "
+                            f"falling back to v1/completions: {e}"
+                        )
+                        params.pop("response_format", None)
+                        return self._do_completions_api(params, model, response_format)
                     logger.warning(f"Structured output failed, falling back to JSON mode: {e}")
                     # Fall through to JSON object mode
 
@@ -304,9 +318,123 @@ class OpenAIClient(BaseAIClient):
                     params["messages"].append({"role": "user", "content": schema_prompt})
 
         # Send the request to OpenAI
-        raw_response = self.api_client.chat.completions.create(**params)
+        try:
+            raw_response = self.api_client.chat.completions.create(**params)
+        except Exception as e:
+            if self._is_non_chat_model_error(e):
+                logger.warning(
+                    f"Model {model} does not support chat completions, "
+                    f"falling back to v1/completions: {e}"
+                )
+                params.pop("response_format", None)
+                return self._do_completions_api(params, model, response_format)
+            raise
 
         return self._create_response_from_raw(raw_response, model, response_format)
+
+    @staticmethod
+    def _is_non_chat_model_error(error: Exception) -> bool:
+        """Return True if the error indicates the model only supports the v1/completions endpoint."""
+        msg = str(error).lower()
+        return "not a chat model" in msg or "v1/completions" in msg
+
+    def _do_completions_api(
+        self,
+        params: dict,
+        model: str,
+        response_format: Optional[Any],
+    ) -> LLMResponse:
+        """
+        Call v1/completions (text completions) instead of v1/chat/completions.
+
+        Converts the chat-style messages list into a single prompt string and
+        calls ``api_client.completions.create()``.  Used when ``completions_api=True``
+        is set, or as an automatic fallback when the model rejects chat completions.
+        """
+        # Build a single prompt string from chat messages
+        parts = []
+        for msg in params.get("messages", []):
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                # Flatten multimodal content - only keep text parts
+                content = " ".join(p.get("text", "") for p in content if p.get("type") == "text")
+            if role == "system":
+                parts.append(f"System: {content}")
+            elif role == "user":
+                parts.append(f"User: {content}")
+            elif role == "assistant":
+                parts.append(f"Assistant: {content}")
+
+        legacy_prompt = "\n".join(parts)
+
+        legacy_params = {
+            "model": model,
+            "prompt": legacy_prompt,
+        }
+        for p in (
+            "temperature",
+            "max_tokens",
+            "top_p",
+            "frequency_penalty",
+            "presence_penalty",
+            "seed",
+            "n",
+            "stop",
+        ):
+            if p in params:
+                legacy_params[p] = params[p]
+
+        raw_response = self.api_client.completions.create(**legacy_params)
+        return self._create_response_from_completions(raw_response, model, response_format)
+
+    def _create_response_from_completions(
+        self, raw_response: Any, model: str, response_format: Optional[Any]
+    ) -> LLMResponse:
+        """Create LLMResponse from a v1/completions response."""
+        choice = raw_response.choices[0]
+        text = choice.text or ""
+        parsed_data = extract_json_from_text(text)
+
+        is_pydantic = response_format and (
+            hasattr(response_format, "model_json_schema") or hasattr(response_format, "schema")
+        )
+        if is_pydantic and parsed_data:
+            try:
+                validated = response_format(**parsed_data)
+                text = (
+                    validated.model_dump_json()
+                    if hasattr(validated, "model_dump_json")
+                    else validated.json()
+                )
+            except Exception as e:
+                logger.warning(f"Failed to validate completions response with Pydantic: {e}")
+
+        usage = Usage()
+        if hasattr(raw_response, "usage") and raw_response.usage:
+            usage = Usage(
+                input_tokens=raw_response.usage.prompt_tokens,
+                output_tokens=raw_response.usage.completion_tokens,
+                total_tokens=raw_response.usage.total_tokens,
+            )
+            costs = calculate_cost(
+                self.PROVIDER_ID,
+                raw_response.model,
+                usage.input_tokens,
+                usage.output_tokens,
+            )
+            if costs is not None:
+                usage.input_cost_usd, usage.output_cost_usd, usage.estimated_cost_usd = costs
+
+        return LLMResponse(
+            text=text,
+            model=raw_response.model,
+            provider=self.PROVIDER_ID,
+            finish_reason=getattr(choice, "finish_reason", None) or "unknown",
+            usage=usage,
+            raw_response=raw_response,
+            parsed=parsed_data,
+        )
 
     def _create_response_from_parsed(self, raw_response: Any, model: str) -> LLMResponse:
         """
