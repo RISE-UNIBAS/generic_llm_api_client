@@ -141,8 +141,11 @@ class OpenAIClient(BaseAIClient):
             cache: Informational only (caching is always automatic)
             file_content: Not used (files already appended to prompt)
             **kwargs: Additional OpenAI-specific parameters
-                completions_api: If True, use v1/completions instead of v1/chat/completions.
-                    Can also be set once at client level via settings["completions_api"].
+                api_style: Which OpenAI endpoint to use. One of:
+                    "chat"        (default) v1/chat/completions  — GPT-4o, GPT-4.1, o-series
+                    "responses"             v1/responses          — Codex, o3, o4-mini
+                    "completions"           v1/completions        — legacy text-completion models
+                    Can also be set once at client level via settings["api_style"].
                 prompt_cache_key: Routing hint for cache optimization
                 prompt_cache_retention: "in_memory" (5-10min) or "24h"
 
@@ -152,7 +155,7 @@ class OpenAIClient(BaseAIClient):
         # Handle conversation messages
         images = images or []
         content_order = kwargs.pop("_content_order", None)
-        completions_api = kwargs.pop("completions_api", self.settings.get("completions_api", False))
+        api_style = kwargs.pop("api_style", self.settings.get("api_style", "chat"))
 
         if messages and len(messages) > 1:
             # Multi-turn conversation: use provided messages
@@ -240,9 +243,11 @@ class OpenAIClient(BaseAIClient):
             if value is not None:
                 params[param] = value
 
-        # Route directly to v1/completions when requested
-        if completions_api:
+        # Route to the appropriate endpoint before any chat-specific handling
+        if api_style == "completions":
             return self._do_completions_api(params, model, response_format)
+        if api_style == "responses":
+            return self._do_responses_api(params, model, prompt, system_prompt, response_format, kwargs)
 
         # Handle tool calling
         tool_definitions = kwargs.pop("_tool_definitions", None)
@@ -280,7 +285,7 @@ class OpenAIClient(BaseAIClient):
                             f"falling back to v1/completions: {e}"
                         )
                         params.pop("response_format", None)
-                        return self._do_completions_api(params, model, response_format)
+                        return self._do_completions_api(params, model, response_format)  # auto-fallback
                     logger.warning(f"Structured output failed, falling back to JSON mode: {e}")
                     # Fall through to JSON object mode
 
@@ -331,6 +336,100 @@ class OpenAIClient(BaseAIClient):
             raise
 
         return self._create_response_from_raw(raw_response, model, response_format)
+
+    def _do_responses_api(
+        self,
+        params: dict,
+        model: str,
+        prompt: str,
+        system_prompt: Optional[str],
+        response_format: Optional[Any],
+        extra_kwargs: dict,
+    ) -> LLMResponse:
+        """
+        Call v1/responses (Responses API) for models like Codex, o3, o4-mini.
+
+        The Responses API uses ``input`` instead of ``messages``, ``instructions``
+        instead of a system role, and ``max_output_tokens`` instead of ``max_tokens``.
+        """
+        responses_params: dict = {"model": model, "input": prompt}
+
+        if system_prompt:
+            responses_params["instructions"] = system_prompt
+
+        # Map common settings; note the renamed max_tokens → max_output_tokens
+        param_map = {
+            "temperature": "temperature",
+            "max_tokens": "max_output_tokens",
+            "top_p": "top_p",
+            "stop": "stop",
+        }
+        for src, dst in param_map.items():
+            value = extra_kwargs.get(src, params.get(src))
+            if value is not None:
+                responses_params[dst] = value
+
+        # Structured output via text.format
+        if response_format and hasattr(response_format, "model_json_schema"):
+            schema = response_format.model_json_schema()
+            responses_params["text"] = {
+                "format": {
+                    "type": "json_schema",
+                    "name": schema.get("title", "response"),
+                    "schema": schema,
+                    "strict": True,
+                }
+            }
+
+        raw_response = self.api_client.responses.create(**responses_params)
+        return self._create_response_from_responses(raw_response, model, response_format)
+
+    def _create_response_from_responses(
+        self, raw_response: Any, model: str, response_format: Optional[Any]
+    ) -> LLMResponse:
+        """Create LLMResponse from a v1/responses API response."""
+        text = getattr(raw_response, "output_text", "") or ""
+        parsed_data = extract_json_from_text(text)
+
+        is_pydantic = response_format and (
+            hasattr(response_format, "model_json_schema") or hasattr(response_format, "schema")
+        )
+        if is_pydantic and parsed_data:
+            try:
+                validated = response_format(**parsed_data)
+                text = (
+                    validated.model_dump_json()
+                    if hasattr(validated, "model_dump_json")
+                    else validated.json()
+                )
+            except Exception as e:
+                logger.warning(f"Failed to validate responses API output with Pydantic: {e}")
+
+        usage = Usage()
+        if hasattr(raw_response, "usage") and raw_response.usage:
+            usage = Usage(
+                input_tokens=raw_response.usage.input_tokens,
+                output_tokens=raw_response.usage.output_tokens,
+                total_tokens=raw_response.usage.total_tokens,
+            )
+            costs = calculate_cost(
+                self.PROVIDER_ID,
+                raw_response.model,
+                usage.input_tokens,
+                usage.output_tokens,
+            )
+            if costs is not None:
+                usage.input_cost_usd, usage.output_cost_usd, usage.estimated_cost_usd = costs
+
+        return LLMResponse(
+            text=text,
+            model=raw_response.model,
+            provider=self.PROVIDER_ID,
+            finish_reason=getattr(raw_response, "status", None) or "unknown",
+            usage=usage,
+            raw_response=raw_response,
+            parsed=parsed_data,
+        )
 
     @staticmethod
     def _is_non_chat_model_error(error: Exception) -> bool:
