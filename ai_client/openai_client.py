@@ -373,11 +373,14 @@ class OpenAIClient(BaseAIClient):
                             image_data = f.read()
                         base64_image = base64.b64encode(image_data).decode("utf-8")
                         from .utils import detect_image_mime_type
+
                         mime_type = detect_image_mime_type(resource)
-                        content.append({
-                            "type": "input_image",
-                            "image_url": f"data:{mime_type};base64,{base64_image}",
-                        })
+                        content.append(
+                            {
+                                "type": "input_image",
+                                "image_url": f"data:{mime_type};base64,{base64_image}",
+                            }
+                        )
                     except Exception as e:
                         logger.error(f"Error reading image file {resource}: {e}")
             input_value = [{"type": "message", "role": "user", "content": content}]
