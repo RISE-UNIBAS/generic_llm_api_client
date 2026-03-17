@@ -11,7 +11,7 @@ import json
 import logging
 from typing import List, Tuple, Any, Optional
 
-from mistralai import Mistral
+from mistralai.client import Mistral
 
 from .base_client import BaseAIClient
 from .response import LLMResponse, Usage
