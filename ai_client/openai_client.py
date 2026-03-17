@@ -248,7 +248,7 @@ class OpenAIClient(BaseAIClient):
             return self._do_completions_api(params, model, response_format)
         if api_style == "responses":
             return self._do_responses_api(
-                params, model, prompt, images, system_prompt, response_format, kwargs
+                params, model, prompt, images, file_content, system_prompt, response_format, kwargs
             )
 
         # Handle tool calling
@@ -347,6 +347,7 @@ class OpenAIClient(BaseAIClient):
         model: str,
         prompt: str,
         images: List[str],
+        file_content: str,
         system_prompt: Optional[str],
         response_format: Optional[Any],
         extra_kwargs: dict,
@@ -361,9 +362,12 @@ class OpenAIClient(BaseAIClient):
         - Content type literals: ``input_text`` / ``input_image`` (not ``text`` / ``image_url``)
         - Image URL is a flat string field, not nested under ``image_url.url``
         """
-        # Build the input: plain string for text-only, message array for multimodal
-        if images:
+        # Build the input: plain string for text-only with no files,
+        # message content array when images or file content are present.
+        if images or file_content:
             content = [{"type": "input_text", "text": prompt}]
+            if file_content:
+                content.append({"type": "input_text", "text": file_content})
             for resource in images:
                 if self.is_url(resource):
                     content.append({"type": "input_image", "image_url": resource})
