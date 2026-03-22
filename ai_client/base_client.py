@@ -745,7 +745,7 @@ def create_ai_client(
     from .deepseek_client import DeepSeekClient
     from .qwen_client import QwenClient
     from .cohere_client import CohereClient
-    from .grok_client import XAIClient
+    from .xai_client import XAIClient
 
     provider_map = {
         "openai": OpenAIClient,
