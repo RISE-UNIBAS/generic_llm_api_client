@@ -10,6 +10,7 @@ implementations to subclasses.
 import abc
 import time
 import asyncio
+from telnetlib import XAUTH
 from typing import List, Tuple, Any, Optional, Union
 from .response import LLMResponse, Usage
 from .utils import (
@@ -744,7 +745,7 @@ def create_ai_client(
     from .deepseek_client import DeepSeekClient
     from .qwen_client import QwenClient
     from .cohere_client import CohereClient
-    from .grok_client import GrokClient
+    from .grok_client import XAIClient
 
     provider_map = {
         "openai": OpenAIClient,
@@ -755,7 +756,7 @@ def create_ai_client(
         "deepseek": DeepSeekClient,
         "qwen": QwenClient,
         "cohere": CohereClient,
-        "grok": GrokClient,
+        "x-ai": XAIClient,
         "openrouter": OpenAIClient,  # Uses OpenAI-compatible API
         "scicore": OpenAIClient,  # Uses OpenAI-compatible API
     }

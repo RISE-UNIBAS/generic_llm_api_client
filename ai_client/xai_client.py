@@ -8,14 +8,14 @@ with a custom base URL.
 from .openai_client import OpenAIClient
 
 
-class GrokClient(OpenAIClient):
+class XAIClient(OpenAIClient):
     """
     Grok client using xAI's OpenAI-compatible API.
 
     This client simply extends OpenAIClient with xAI's base URL.
     """
 
-    PROVIDER_ID = "grok"
+    PROVIDER_ID = "x-ai"
     SUPPORTS_MULTIMODAL = True
 
     def _init_client(self):

@@ -34,7 +34,7 @@ from .mistral_client import MistralClient
 from .deepseek_client import DeepSeekClient
 from .qwen_client import QwenClient
 from .cohere_client import CohereClient
-from .grok_client import GrokClient
+from .xai_client import XAIClient
 from .response import LLMResponse, Usage
 from .pricing import set_pricing_file
 from .utils import (
@@ -47,7 +47,7 @@ from .utils import (
     APIError,
 )
 
-__version__ = "0.3.9"
+__version__ = "0.3.10"
 
 __all__ = [
     # Core classes
@@ -66,7 +66,7 @@ __all__ = [
     "DeepSeekClient",
     "QwenClient",
     "CohereClient",
-    "GrokClient",
+    "XAIClient",
     # Response and utility classes
     "LLMResponse",
     "Usage",

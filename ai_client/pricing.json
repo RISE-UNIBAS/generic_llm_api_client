@@ -1,7 +1,7 @@
 {
   "metadata": {
     "created": "2025-09-29T14:20:54.795632",
-    "version": "1.10",
+    "version": "1.11",
     "last_updated": "2026-03-16"
   },
   "pricing": {
@@ -1546,6 +1546,12 @@
           "output_price": 15.0,
           "source_url": "https://web.archive.org/web/20260316102632/https://developers.openai.com/api/docs/models/gpt-5.4",
           "added": "2026-03-16"
+        },
+        "gpt-5.3-codex": {
+          "input_price": 1.75,
+          "output_price": 14,
+          "source_url": "https://web.archive.org/web/20260317134442/https://developers.openai.com/api/docs/models/gpt-5.3-codex",
+          "added": "2026-03-16"
         }
       },
       "genai": {
@@ -1560,6 +1566,16 @@
           "output_price": 12.0,
           "source_url": "https://web.archive.org/web/20260316191327/https://ai.google.dev/gemini-api/docs/gemini-3",
           "added": "2026-03-16"
+        }
+      }
+    },
+    "2026-03-22": {
+      "x-ai": {
+        "grok-4.20-0309-reasoning": {
+          "input_price": 2.0,
+          "output_price": 6.0,
+          "source_url": "",
+          "added": "2026-03-22"
         }
       }
     }
