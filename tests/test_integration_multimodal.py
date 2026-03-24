@@ -204,31 +204,30 @@ class TestDeepSeekVision:
 
 
 @pytest.mark.integration
-class TestQwenVision:
-    """Integration tests for Qwen vision models."""
+class TestAlibabaVision:
+    """Integration tests for Alibaba vision models."""
 
     @pytest.fixture(autouse=True)
     def skip_if_no_api_key(self):
         """Skip test if API key not set."""
-        if not os.getenv("QWEN_API_KEY"):
-            pytest.skip("QWEN_API_KEY not set")
+        if not os.getenv("ALIBABA_API_KEY"):
+            pytest.skip("ALIBABA_API_KEY not set")
 
-    def test_qwen_vision_with_image(self, sample_image_path):
-        """Test Qwen vision model with image."""
-        client = create_ai_client("qwen", api_key=os.getenv("QWEN_API_KEY"))
+    def test_alibaba_vision_with_image(self, sample_image_path):
+        """Test Alibaba vision model with image."""
+        client = create_ai_client("alibaba", api_key=os.getenv("ALIBABA_API_KEY"))
 
-        # Qwen has vision-language models
         response = client.prompt("qwen-vl-max", VISION_PROMPT, images=[sample_image_path])
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
         assert response.text != ""
-        assert response.provider == "qwen"
+        assert response.provider == "alibaba"
 
         # Verify timing
         assert response.duration > 0
 
-        print(f"\nQwen vision response: {response.text}")
+        print(f"\nAlibaba vision response: {response.text}")
 
 
 @pytest.mark.integration

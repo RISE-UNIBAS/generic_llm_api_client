@@ -11,7 +11,7 @@ from ai_client import (
     GeminiClient,
     MistralClient,
     DeepSeekClient,
-    QwenClient,
+    AlibabaClient,
 )
 
 
@@ -53,12 +53,12 @@ class TestCreateAIClient:
             assert isinstance(client, DeepSeekClient)
             assert client.PROVIDER_ID == "deepseek"
 
-    def test_create_qwen_client(self):
-        """Test creating Qwen client."""
+    def test_create_alibaba_client(self):
+        """Test creating Alibaba client."""
         with patch("ai_client.openai_client.OpenAI"):
-            client = create_ai_client("qwen", api_key="test-key")
-            assert isinstance(client, QwenClient)
-            assert client.PROVIDER_ID == "qwen"
+            client = create_ai_client("alibaba", api_key="test-key")
+            assert isinstance(client, AlibabaClient)
+            assert client.PROVIDER_ID == "alibaba"
 
     def test_create_openrouter_client(self):
         """Test creating OpenRouter client (uses OpenAI)."""

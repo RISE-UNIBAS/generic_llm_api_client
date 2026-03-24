@@ -6,7 +6,7 @@ their respective APIs, with separate implementation files for each provider.
 
 Key features:
 - Abstract base client defining the common interface for all AI providers
-- Provider-specific implementations for OpenAI, Google Gemini, Anthropic Claude, Mistral, Cohere, DeepSeek, and Qwen
+- Provider-specific implementations for OpenAI, Google Gemini, Anthropic Claude, Mistral, Cohere, DeepSeek, and Alibaba
 - Support for both text-only and multimodal (text + images) content
 - Consistent LLMResponse format with detailed usage tracking
 - Factory method to create appropriate client based on provider
@@ -20,7 +20,7 @@ Technical implementation details:
 - Mistral: Uses the chat completion API with multimodal support
 - Cohere: Uses the chat API (ClientV2) with vision model support for multimodal content
 - DeepSeek: OpenAI-compatible API with custom base URL
-- Qwen: OpenAI-compatible API with custom base URL
+- Alibaba: OpenAI-compatible API with DashScope base URL
 - Grok: OpenAI-compatible API with xAI base URL
 - OpenRouter/sciCORE: Use OpenAI client with custom base URLs
 """
@@ -32,7 +32,7 @@ from .gemini_client import GeminiClient
 from .claude_client import ClaudeClient
 from .mistral_client import MistralClient
 from .deepseek_client import DeepSeekClient
-from .qwen_client import QwenClient
+from .alibaba_client import AlibabaClient
 from .cohere_client import CohereClient
 from .xai_client import XAIClient
 from .response import LLMResponse, Usage
@@ -47,7 +47,7 @@ from .utils import (
     APIError,
 )
 
-__version__ = "0.3.10"
+__version__ = "0.4.0"
 
 __all__ = [
     # Core classes
@@ -64,7 +64,7 @@ __all__ = [
     "ClaudeClient",
     "MistralClient",
     "DeepSeekClient",
-    "QwenClient",
+    "AlibabaClient",
     "CohereClient",
     "XAIClient",
     # Response and utility classes

@@ -167,7 +167,7 @@ class PricingManager:
             "genai": "genai",
             "mistral": "mistral",
             "deepseek": "deepseek",
-            "qwen": "qwen",
+            "alibaba": "alibaba",
             "openrouter": "openrouter",
             "scicore": "scicore",
         }

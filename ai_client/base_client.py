@@ -743,7 +743,7 @@ def create_ai_client(
     from .claude_client import ClaudeClient
     from .mistral_client import MistralClient
     from .deepseek_client import DeepSeekClient
-    from .qwen_client import QwenClient
+    from .alibaba_client import AlibabaClient
     from .cohere_client import CohereClient
     from .xai_client import XAIClient
 
@@ -754,7 +754,7 @@ def create_ai_client(
         "anthropic": ClaudeClient,
         "mistral": MistralClient,
         "deepseek": DeepSeekClient,
-        "qwen": QwenClient,
+        "alibaba": AlibabaClient,
         "cohere": CohereClient,
         "x-ai": XAIClient,
         "openrouter": OpenAIClient,  # Uses OpenAI-compatible API

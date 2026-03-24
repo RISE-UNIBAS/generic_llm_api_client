@@ -189,25 +189,24 @@ class TestDeepSeekIntegration:
 
 
 @pytest.mark.integration
-class TestQwenIntegration:
-    """Integration tests for Qwen."""
+class TestAlibabaIntegration:
+    """Integration tests for Alibaba."""
 
     @pytest.fixture(autouse=True)
     def skip_if_no_api_key(self):
         """Skip test if API key not set."""
-        if not os.getenv("QWEN_API_KEY"):
-            pytest.skip("QWEN_API_KEY not set")
+        if not os.getenv("ALIBABA_API_KEY"):
+            pytest.skip("ALIBABA_API_KEY not set")
 
-    def test_qwen_basic_prompt(self):
-        """Test basic Qwen prompt with real API."""
-        client = create_ai_client("qwen", api_key=os.getenv("QWEN_API_KEY"))
+    def test_alibaba_basic_prompt(self):
+        """Test basic Alibaba prompt with real API."""
+        client = create_ai_client("alibaba", api_key=os.getenv("ALIBABA_API_KEY"))
         response = client.prompt("qwen-turbo", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
         assert response.text != ""
-        assert response.provider == "qwen"
-        assert "qwen" in response.model.lower()  # Check for model family
+        assert response.provider == "alibaba"
         assert response.finish_reason in ["stop", "length"]
 
         # Verify usage tracking
@@ -368,8 +367,8 @@ class TestProviderParity:
             providers_to_test.append(("cohere", "command-r", os.getenv("COHERE_API_KEY")))
         if os.getenv("DEEPSEEK_API_KEY"):
             providers_to_test.append(("deepseek", "deepseek-chat", os.getenv("DEEPSEEK_API_KEY")))
-        if os.getenv("QWEN_API_KEY"):
-            providers_to_test.append(("qwen", "qwen-turbo", os.getenv("QWEN_API_KEY")))
+        if os.getenv("ALIBABA_API_KEY"):
+            providers_to_test.append(("alibaba", "qwen-turbo", os.getenv("ALIBABA_API_KEY")))
 
         if not providers_to_test:
             pytest.skip("No API keys configured")

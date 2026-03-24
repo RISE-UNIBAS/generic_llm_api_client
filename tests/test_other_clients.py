@@ -1,5 +1,5 @@
 """
-Tests for Gemini, Mistral, Cohere, DeepSeek, and Qwen clients.
+Tests for Gemini, Mistral, Cohere, DeepSeek, and Alibaba clients.
 """
 
 from unittest.mock import Mock, patch
@@ -9,7 +9,7 @@ from ai_client import (
     MistralClient,
     CohereClient,
     DeepSeekClient,
-    QwenClient,
+    AlibabaClient,
 )
 from ai_client.response import LLMResponse
 
@@ -135,30 +135,30 @@ class TestDeepSeekClient:
             assert response.text == "Hello! I'm an AI assistant."
 
 
-class TestQwenClient:
-    """Tests for QwenClient."""
+class TestAlibabaClient:
+    """Tests for AlibabaClient."""
 
-    def test_qwen_client_initialization(self):
-        """Test Qwen client initialization."""
+    def test_alibaba_client_initialization(self):
+        """Test Alibaba client initialization."""
         with patch("ai_client.openai_client.OpenAI") as mock_openai:
-            client = create_ai_client("qwen", api_key="test-key")
+            client = create_ai_client("alibaba", api_key="test-key")
 
-            assert isinstance(client, QwenClient)
-            assert client.PROVIDER_ID == "qwen"
+            assert isinstance(client, AlibabaClient)
+            assert client.PROVIDER_ID == "alibaba"
             assert client.SUPPORTS_MULTIMODAL is True
 
             # Should have set custom base URL
             call_args = mock_openai.call_args
             assert "aliyuncs.com" in call_args.kwargs["base_url"]
 
-    def test_qwen_inherits_openai_functionality(self, mock_openai_response):
-        """Test that Qwen inherits OpenAI functionality."""
+    def test_alibaba_inherits_openai_functionality(self, mock_openai_response):
+        """Test that Alibaba client inherits OpenAI functionality."""
         with patch("ai_client.openai_client.OpenAI") as mock_openai_class:
             mock_client = Mock()
             mock_openai_class.return_value = mock_client
             mock_client.chat.completions.create.return_value = mock_openai_response
 
-            client = create_ai_client("qwen", api_key="test-key")
+            client = create_ai_client("alibaba", api_key="test-key")
             response = client.prompt("qwen-turbo", "Hello!")
 
             # Should work like OpenAI client

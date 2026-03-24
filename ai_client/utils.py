@@ -192,6 +192,8 @@ def read_text_files(file_paths: list[str]) -> str:
     """
     import os
 
+    _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".tif"}
+
     if not file_paths:
         return ""
 
@@ -199,6 +201,14 @@ def read_text_files(file_paths: list[str]) -> str:
 
     for filepath in file_paths:
         filename = os.path.basename(filepath)
+        ext = os.path.splitext(filename)[1].lower()
+
+        if ext in _IMAGE_EXTENSIONS:
+            logger.warning(
+                f"'{filename}' looks like an image file but was passed via files=. "
+                f"Use images= instead. Skipping."
+            )
+            continue
 
         try:
             # Try UTF-8 first (most common)
