@@ -653,7 +653,9 @@ class OpenAIClient(BaseAIClient):
             LLMResponse object
         """
         choice = raw_response.choices[0]
-        text = choice.message.content or ""
+        # Some reasoning models (e.g. Alibaba qwen-thinking, DeepSeek reasoner) return the
+        # final answer in `reasoning_content` with an empty `content` field.
+        text = choice.message.content or getattr(choice.message, "reasoning_content", None) or ""
         parsed_data = None
 
         # Extract tool calls if present
