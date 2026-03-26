@@ -10,7 +10,6 @@ implementations to subclasses.
 import abc
 import time
 import asyncio
-from telnetlib import XAUTH
 from typing import List, Tuple, Any, Optional, Union
 from .response import LLMResponse, Usage
 from .utils import (
