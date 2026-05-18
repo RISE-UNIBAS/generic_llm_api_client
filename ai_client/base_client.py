@@ -773,7 +773,7 @@ def create_ai_client(
         base_url = "https://llm-api-h200.ceda.unibas.ch/litellm"
 
     client_class = provider_map[provider]
-    return client_class(
+    client = client_class(
         api_key,
         system_prompt,
         base_url,
@@ -783,3 +783,8 @@ def create_ai_client(
         content_order,
         **settings,
     )
+
+    if provider in ("openrouter", "scicore"):
+        client.PROVIDER_ID = provider
+
+    return client
