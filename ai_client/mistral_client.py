@@ -145,7 +145,7 @@ class MistralClient(BaseAIClient):
             schema_prompt = (
                 f"\n\nReturn a JSON response matching this exact schema: {json.dumps(schema)}"
             )
-            messages[-1]["content"] = prompt + schema_prompt
+            content.append({"type": "text", "text": schema_prompt})
             params["response_format"] = {"type": "json_object"}
 
         # Send the request
