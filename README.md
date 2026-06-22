@@ -303,7 +303,7 @@ response, _ = client.prompt('anthropic/claude-3-opus', 'Hello!')
 client = create_ai_client(
     'scicore',
     api_key='your-key',
-    base_url='https://llm-api-h200.ceda.unibas.ch/litellm/v1'
+    base_url='https://llm-api-h200.ceda.unibas.ch/v1'
 )
 
 response, _ = client.prompt('deepseek/deepseek-chat', 'Hello!')
