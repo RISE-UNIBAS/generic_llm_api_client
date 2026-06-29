@@ -75,7 +75,7 @@ class TestCreateAIClient:
             client = create_ai_client(
                 "scicore",
                 api_key="test-key",
-                base_url="https://llm-api-h200.ceda.unibas.ch/litellm/v1",
+                base_url="https://llm-api-h200.ceda.unibas.ch/v1",
             )
             assert isinstance(client, OpenAIClient)
 

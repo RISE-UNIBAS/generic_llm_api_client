@@ -770,7 +770,7 @@ def create_ai_client(
     if provider == "openrouter" and base_url is None:
         base_url = "https://openrouter.ai/api/v1"
     elif provider == "scicore" and base_url is None:
-        base_url = "https://llm-api-h200.ceda.unibas.ch/litellm"
+        base_url = "https://llm-api-h200.ceda.unibas.ch/v1"
 
     client_class = provider_map[provider]
     client = client_class(

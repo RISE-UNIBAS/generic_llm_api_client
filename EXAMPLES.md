@@ -114,7 +114,7 @@ response = client.prompt(
 client = create_ai_client(
     'scicore',
     api_key='your-scicore-key',
-    base_url='https://llm-api-h200.ceda.unibas.ch/litellm/v1'
+    base_url='https://llm-api-h200.ceda.unibas.ch/v1'
 )
 
 response = client.prompt('deepseek/deepseek-chat', 'Hello!')
