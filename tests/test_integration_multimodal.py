@@ -231,6 +231,36 @@ class TestAlibabaVision:
 
 
 @pytest.mark.integration
+class TestHuggingFaceVision:
+    """Integration tests for HuggingFace vision models."""
+
+    # The v1.5 Apertus models accept image input; the older -2509 ones are text-only.
+    MODEL = "swiss-ai/Apertus-v1.5-8B"
+
+    @pytest.fixture(autouse=True)
+    def skip_if_no_api_key(self):
+        """Skip test if API key not set."""
+        if not os.getenv("HUGGINGFACE_API_KEY"):
+            pytest.skip("HUGGINGFACE_API_KEY not set")
+
+    def test_huggingface_vision_with_image(self, sample_image_path):
+        """Test HuggingFace vision model with image."""
+        client = create_ai_client("huggingface", api_key=os.getenv("HUGGINGFACE_API_KEY"))
+
+        response = client.prompt(self.MODEL, VISION_PROMPT, images=[sample_image_path])
+
+        # Verify response structure
+        assert isinstance(response, LLMResponse)
+        assert response.text != ""
+        assert response.provider == "huggingface"
+
+        # Verify timing
+        assert response.duration > 0
+
+        print(f"\nHuggingFace vision response: {response.text}")
+
+
+@pytest.mark.integration
 class TestMultiImageSupport:
     """Test support for multiple images in a single request."""
 

@@ -152,7 +152,18 @@ version = "1.0.0"
 
 Before creating a release:
 
-### 1. Run tests locally
+### 1. Refresh the bundled pricing snapshot
+`ai_client/pricing.json` is a generated snapshot of the pricing data maintained in the
+public benchmark repo (`RISE-UNIBAS/humanities_data_benchmark`, `scripts/data/pricing.json`),
+which is the single source of truth. Refresh it before every release:
+```bash
+python scripts/update_pricing.py            # fetch and overwrite ai_client/pricing.json
+python scripts/update_pricing.py --dry-run  # preview only
+```
+Do not hand-edit `ai_client/pricing.json`; make pricing changes in the benchmark repo, and
+the library never fetches pricing at runtime. Commit the refreshed file with the release.
+
+### 2. Run tests locally
 ```bash
 # Run unit tests
 pytest
@@ -164,13 +175,13 @@ pytest --cov=ai_client --cov-report=term-missing
 pytest -m integration
 ```
 
-### 2. Update version number
+### 3. Update version number
 Edit `pyproject.toml`:
 ```toml
 version = "0.1.1"  # Increment appropriately
 ```
 
-### 3. Update CHANGELOG (optional but recommended)
+### 4. Update CHANGELOG (optional but recommended)
 Create/update `CHANGELOG.md` with release notes:
 ```markdown
 ## [0.1.1] - 2025-10-28
@@ -186,21 +197,21 @@ Create/update `CHANGELOG.md` with release notes:
 - Improved error messages in integration tests
 ```
 
-### 4. Commit changes
+### 5. Commit changes
 ```bash
-git add pyproject.toml CHANGELOG.md
+git add pyproject.toml CHANGELOG.md ai_client/pricing.json
 git commit -m "Bump version to 0.1.1"
 git push
 ```
 
-### 5. Create GitHub release
+### 6. Create GitHub release
 ```bash
 gh release create v0.1.1 \
   --title "v0.1.1" \
   --notes-file CHANGELOG.md
 ```
 
-### 6. Monitor the workflow
+### 7. Monitor the workflow
 Watch: https://github.com/RISE-UNIBAS/generic_llm_api_client/actions
 
 You should see:

@@ -120,6 +120,53 @@ client = create_ai_client(
 response = client.prompt('deepseek/deepseek-chat', 'Hello!')
 ```
 
+### HuggingFace (Inference Providers)
+
+Call any model in the HuggingFace Inference Providers catalog with a single HF token:
+
+```python
+client = create_ai_client('huggingface', api_key='hf_...')
+
+response = client.prompt('deepseek-ai/DeepSeek-V3.1', 'Hello!')
+print(response.text)
+print(response.usage.total_tokens)  # cost is None for HuggingFace; tokens are tracked
+```
+
+Pin the serving provider with a `:<provider>` suffix when you need reproducible capabilities
+(`:fastest` is the default, `:cheapest` also available):
+
+```python
+response = client.prompt('deepseek-ai/DeepSeek-V3.1:novita', 'Hello!')
+```
+
+Bill an organization instead of your personal account:
+
+```python
+client = create_ai_client(
+    'huggingface',
+    api_key='hf_...',
+    default_headers={"X-HF-Bill-To": "my-org-name"}
+)
+```
+
+### HuggingFace (Dedicated Inference Endpoint)
+
+For a Hub model the router does not serve, deploy your own endpoint. The `model` argument is the
+endpoint name, not the Hub repo id:
+
+```python
+client = create_ai_client(
+    'huggingface',
+    api_key='hf_...',
+    base_url='https://abc123.us-east-1.aws.endpoints.huggingface.cloud/v1'
+)
+
+response = client.prompt('my-endpoint-name', 'Hello!')
+```
+
+Dedicated endpoints scale to zero after an hour idle with a 3-5 minute cold start, so the first
+call to an idle endpoint may return an error response.
+
 ## Structured Output (Pydantic)
 
 ### Simple Schema

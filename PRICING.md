@@ -6,7 +6,7 @@ The package now includes automatic cost calculation for all API requests based o
 
 - **Automatic Cost Calculation**: Costs are calculated automatically for every request
 - **Separate Input/Output Costs**: Track input tokens, output tokens, and total costs separately
-- **Up-to-date Pricing**: Includes pricing data from multiple providers (last updated: 2025-10-20)
+- **Up-to-date Pricing**: Bundled pricing snapshot, refreshed from the benchmark repo at each release (see below)
 - **Injectable Pricing**: Update pricing data externally when needed
 
 ## Cost Fields in Usage
@@ -94,6 +94,19 @@ Pricing data is included for:
 - **Mistral**: mistral-large, mistral-medium, pixtral-large, etc.
 - **OpenRouter**: Various models (qwen, llama, grok, etc.)
 - **sciCORE**: Academic/research models
+- **HuggingFace**: prices for selected Inference Providers models (see the note below)
+
+### A note on HuggingFace pricing
+
+HuggingFace cost is **not** resolved at runtime — `usage.estimated_cost_usd` is `None` for
+HuggingFace responses; cost is injected downstream by the benchmark harness. The `huggingface`
+entries here exist for that step, keyed to canonical model ids (matching the benchmark's
+`model_aliases.json`).
+
+It cannot be automatic for two reasons: the router echoes a *normalized* model id (lowercased,
+date suffix dropped) that will not match the canonical key, and a model may be served by several
+providers at different prices (a bare id routes to the fastest). Pin a provider with a
+`:<provider>` suffix when an exact price matters.
 
 ## Cost Calculation Details
 
@@ -122,12 +135,17 @@ else:
 
 ## Updating the Package Pricing
 
-To update the built-in pricing data:
+`ai_client/pricing.json` is a **generated snapshot**, not a hand-edited file. Pricing is
+maintained in the public benchmark repo (`RISE-UNIBAS/humanities_data_benchmark`,
+`scripts/data/pricing.json`), the single source of truth. To refresh the bundled snapshot
+before a release:
 
-1. Update `ai_client/pricing.json` with new prices
-2. Increment the version in `metadata.version`
-3. Update `metadata.last_updated`
-4. Rebuild and redistribute the package
+```bash
+python scripts/update_pricing.py
+```
+
+Do not hand-edit `ai_client/pricing.json`; make pricing changes in the benchmark repo. See
+PUBLISHING.md for the full release checklist.
 
 ## Notes
 
