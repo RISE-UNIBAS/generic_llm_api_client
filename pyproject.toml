@@ -83,10 +83,11 @@ Repository = "https://github.com/RISE-UNIBAS/generic_llm_api_client"
 Issues = "https://github.com/RISE-UNIBAS/generic_llm_api_client/issues"
 
 [tool.setuptools]
-packages = ["ai_client"]
+packages = ["ai_client", "ai_client.tools", "ai_client.tools.builtin"]
 
 [tool.setuptools.package-data]
-ai_client = ["py.typed", "pricing.json", "tools/default_tools.json"]
+ai_client = ["py.typed", "pricing.json"]
+"ai_client.tools" = ["default_tools.json"]
 
 [tool.black]
 line-length = 100
