@@ -69,13 +69,13 @@ class TestClaudeIntegration:
     def test_claude_basic_prompt(self):
         """Test basic Claude prompt with real API."""
         client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
-        response = client.prompt("claude-3-5-haiku-20241022", SIMPLE_PROMPT)
+        response = client.prompt("claude-haiku-4-5", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
         assert response.text != ""
         assert response.provider == "anthropic"
-        assert "claude-3-5-haiku" in response.model.lower()  # Check for model family
+        assert "claude-haiku" in response.model.lower()  # Check for model family
         assert response.finish_reason in ["stop", "end_turn", "max_tokens"]
 
         # Verify usage tracking
@@ -102,7 +102,7 @@ class TestGeminiIntegration:
     def test_gemini_basic_prompt(self):
         """Test basic Gemini prompt with real API."""
         client = create_ai_client("genai", api_key=os.getenv("GOOGLE_API_KEY"))
-        response = client.prompt("gemini-2.0-flash-exp", SIMPLE_PROMPT)
+        response = client.prompt("gemini-2.5-flash", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -238,12 +238,12 @@ class TestOpenRouterIntegration:
             base_url="https://openrouter.ai/api/v1",
         )
         # Use a cheap model available on OpenRouter
-        response = client.prompt("openai/gpt-3.5-turbo", SIMPLE_PROMPT)
+        response = client.prompt("openai/gpt-4o-mini", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
         assert response.text != ""
-        assert response.provider == "openai"  # OpenRouter uses OpenAI client
+        assert response.provider == "openrouter"  # PROVIDER_ID is patched on the instance
         assert response.finish_reason in ["stop", "end_turn", "length"]
 
         # Verify usage tracking
@@ -270,8 +270,8 @@ class TestSciCOREIntegration:
     def test_scicore_basic_prompt(self):
         """Test basic sciCORE prompt with real API."""
         # Note: Update base_url and model according to your sciCORE setup
-        base_url = os.getenv("SCICORE_BASE_URL", "https://api.scicore.unibas.ch/v1")
-        model = os.getenv("SCICORE_MODEL", "gpt-4")
+        base_url = os.getenv("SCICORE_BASE_URL", "https://llm-api-h200.ceda.unibas.ch/v1")
+        model = os.getenv("SCICORE_MODEL", "qwen35-397b-a17b-fp8")
 
         client = create_ai_client(
             "scicore", api_key=os.getenv("SCICORE_API_KEY"), base_url=base_url
@@ -297,7 +297,7 @@ class TestSciCOREIntegration:
                 )
 
         assert response.text != ""
-        assert response.provider == "openai"  # sciCORE uses OpenAI client
+        assert response.provider == "scicore"  # PROVIDER_ID is patched on the instance
         assert response.finish_reason in ["stop", "end_turn", "length"]
 
         # Verify usage tracking
@@ -321,13 +321,13 @@ class TestCohereIntegration:
     def test_cohere_basic_prompt(self):
         """Test basic Cohere prompt with real API."""
         client = create_ai_client("cohere", api_key=os.getenv("COHERE_API_KEY"))
-        response = client.prompt("command-r", SIMPLE_PROMPT)
+        response = client.prompt("command-a-03-2025", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
         assert response.text != ""
         assert response.provider == "cohere"
-        assert response.model == "command-r"
+        assert response.model == "command-a-03-2025"
         assert response.finish_reason in ["stop", "complete", "COMPLETE"]
 
         # Verify usage tracking
@@ -343,6 +343,75 @@ class TestCohereIntegration:
 
 
 @pytest.mark.integration
+class TestHuggingFaceIntegration:
+    """Integration tests for HuggingFace Inference Providers."""
+
+    # Served only by publicai, so routing is unambiguous.
+    MODEL = "swiss-ai/Apertus-8B-Instruct-2509"
+
+    @pytest.fixture(autouse=True)
+    def skip_if_no_api_key(self):
+        """Skip test if API key not set."""
+        if not os.getenv("HUGGINGFACE_API_KEY"):
+            pytest.skip("HUGGINGFACE_API_KEY not set")
+
+    def test_huggingface_basic_prompt(self):
+        """Test basic HuggingFace prompt with real API."""
+        client = create_ai_client("huggingface", api_key=os.getenv("HUGGINGFACE_API_KEY"))
+        response = client.prompt(self.MODEL, SIMPLE_PROMPT)
+
+        # Verify response structure
+        assert isinstance(response, LLMResponse)
+        assert response.text != ""
+        assert response.provider == "huggingface"
+        assert "apertus" in response.model.lower()
+        assert response.finish_reason in ["stop", "end_turn", "length"]
+
+        # Verify usage tracking
+        assert response.usage.input_tokens > 0
+        assert response.usage.output_tokens > 0
+        assert response.usage.total_tokens > 0
+
+        # Verify timing
+        assert response.duration > 0
+
+        # Verify response content
+        assert "hello" in response.text.lower() or "working" in response.text.lower()
+
+    def test_huggingface_cost_left_to_downstream_injection(self):
+        """
+        The library tracks tokens but does not resolve HuggingFace cost at runtime.
+
+        pricing.json keys the swiss-ai prices to their canonical ids, while the router
+        echoes a normalized id (e.g. 'swiss-ai/apertus-8b-instruct'), so the library's
+        lookup intentionally misses and cost is injected downstream by the benchmark
+        harness (see PRICING.md). Tokens must still be populated for that step.
+        """
+        client = create_ai_client("huggingface", api_key=os.getenv("HUGGINGFACE_API_KEY"))
+        response = client.prompt(self.MODEL, SIMPLE_PROMPT)
+
+        assert response.usage.total_tokens > 0
+        assert response.usage.estimated_cost_usd is None
+
+    def test_huggingface_model_list(self):
+        """The router exposes its full catalogue via /v1/models."""
+        client = create_ai_client("huggingface", api_key=os.getenv("HUGGINGFACE_API_KEY"))
+        models = client.get_model_list()
+
+        assert len(models) > 0
+        model_ids = [model_id for model_id, _ in models]
+        assert self.MODEL in model_ids
+
+    def test_huggingface_provider_pinning(self):
+        """A ':<provider>' suffix pins the serving provider."""
+        client = create_ai_client("huggingface", api_key=os.getenv("HUGGINGFACE_API_KEY"))
+        response = client.prompt(f"{self.MODEL}:publicai", SIMPLE_PROMPT)
+
+        assert response.text != ""
+        assert response.usage.total_tokens > 0
+
+
+@pytest.mark.integration
 class TestProviderParity:
     """Tests that verify all providers work similarly."""
 
@@ -355,20 +424,28 @@ class TestProviderParity:
             providers_to_test.append(("openai", "gpt-4o-mini", os.getenv("OPENAI_API_KEY")))
         if os.getenv("ANTHROPIC_API_KEY"):
             providers_to_test.append(
-                ("anthropic", "claude-3-5-haiku-20241022", os.getenv("ANTHROPIC_API_KEY"))
+                ("anthropic", "claude-haiku-4-5", os.getenv("ANTHROPIC_API_KEY"))
             )
         if os.getenv("GOOGLE_API_KEY"):
-            providers_to_test.append(("genai", "gemini-2.0-flash-exp", os.getenv("GOOGLE_API_KEY")))
+            providers_to_test.append(("genai", "gemini-2.5-flash", os.getenv("GOOGLE_API_KEY")))
         if os.getenv("MISTRAL_API_KEY"):
             providers_to_test.append(
                 ("mistral", "mistral-small-latest", os.getenv("MISTRAL_API_KEY"))
             )
         if os.getenv("COHERE_API_KEY"):
-            providers_to_test.append(("cohere", "command-r", os.getenv("COHERE_API_KEY")))
+            providers_to_test.append(("cohere", "command-a-03-2025", os.getenv("COHERE_API_KEY")))
         if os.getenv("DEEPSEEK_API_KEY"):
             providers_to_test.append(("deepseek", "deepseek-chat", os.getenv("DEEPSEEK_API_KEY")))
         if os.getenv("ALIBABA_API_KEY"):
             providers_to_test.append(("alibaba", "qwen-turbo", os.getenv("ALIBABA_API_KEY")))
+        if os.getenv("HUGGINGFACE_API_KEY"):
+            providers_to_test.append(
+                (
+                    "huggingface",
+                    "swiss-ai/Apertus-8B-Instruct-2509",
+                    os.getenv("HUGGINGFACE_API_KEY"),
+                )
+            )
 
         if not providers_to_test:
             pytest.skip("No API keys configured")

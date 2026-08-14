@@ -30,6 +30,35 @@ def mock_openai_response():
 
 
 @pytest.fixture
+def mock_huggingface_response():
+    """
+    Mock HuggingFace Inference Providers router response.
+
+    The router speaks the OpenAI chat-completions format, so this mirrors
+    mock_openai_response. `model` is the normalized id the router actually echoes
+    back (lowercased, date suffix dropped), which differs from the requested id.
+    """
+    response = Mock()
+    response.id = "chatcmpl-hf-123"
+    response.model = "swiss-ai/apertus-8b-instruct"
+    response.choices = [Mock()]
+    response.choices[0].message = Mock()
+    response.choices[0].message.content = "Gruezi! I'm Apertus."
+    response.choices[0].message.tool_calls = None
+    response.choices[0].finish_reason = "stop"
+    response.usage = Mock()
+    response.usage.prompt_tokens = 1_000_000
+    response.usage.completion_tokens = 1_000_000
+    response.usage.total_tokens = 2_000_000
+    response.usage.prompt_tokens_details = Mock()
+    response.usage.prompt_tokens_details.cached_tokens = 0
+    # The router does not report a per-request cost. Remove the auto-created Mock
+    # attribute so the client falls through to the pricing.json lookup.
+    del response.usage.cost
+    return response
+
+
+@pytest.fixture
 def mock_claude_response():
     """Mock Anthropic Claude API response."""
     response = Mock()

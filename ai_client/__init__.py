@@ -22,6 +22,8 @@ Technical implementation details:
 - DeepSeek: OpenAI-compatible API with custom base URL
 - Alibaba: OpenAI-compatible API with DashScope base URL
 - Grok: OpenAI-compatible API with xAI base URL
+- HuggingFace: OpenAI-compatible API via the Inference Providers router, or a
+  dedicated Inference Endpoint when base_url is supplied
 - OpenRouter/sciCORE: Use OpenAI client with custom base URLs
 """
 
@@ -35,6 +37,7 @@ from .deepseek_client import DeepSeekClient
 from .alibaba_client import AlibabaClient
 from .cohere_client import CohereClient
 from .xai_client import XAIClient
+from .huggingface_client import HuggingFaceClient
 from .response import LLMResponse, Usage
 from .pricing import set_pricing_file
 from .utils import (
@@ -47,7 +50,7 @@ from .utils import (
     APIError,
 )
 
-__version__ = "0.4.4"
+__version__ = "0.4.5"
 
 __all__ = [
     # Core classes
@@ -67,6 +70,7 @@ __all__ = [
     "AlibabaClient",
     "CohereClient",
     "XAIClient",
+    "HuggingFaceClient",
     # Response and utility classes
     "LLMResponse",
     "Usage",

@@ -12,6 +12,7 @@ from ai_client import (
     MistralClient,
     DeepSeekClient,
     AlibabaClient,
+    HuggingFaceClient,
 )
 
 
@@ -59,6 +60,30 @@ class TestCreateAIClient:
             client = create_ai_client("alibaba", api_key="test-key")
             assert isinstance(client, AlibabaClient)
             assert client.PROVIDER_ID == "alibaba"
+
+    def test_create_huggingface_client(self):
+        """Test creating HuggingFace client (defaults to the Inference Providers router)."""
+        with patch("ai_client.openai_client.OpenAI") as mock_openai:
+            client = create_ai_client("huggingface", api_key="test-key")
+            assert isinstance(client, HuggingFaceClient)
+            assert client.PROVIDER_ID == "huggingface"
+            assert mock_openai.call_args.kwargs["base_url"] == "https://router.huggingface.co/v1"
+
+    def test_create_huggingface_client_via_alias(self):
+        """Test that the 'hf' alias resolves to the same client."""
+        with patch("ai_client.openai_client.OpenAI"):
+            client = create_ai_client("hf", api_key="test-key")
+            assert isinstance(client, HuggingFaceClient)
+            assert client.PROVIDER_ID == "huggingface"
+
+    def test_create_huggingface_client_dedicated_endpoint(self):
+        """Test that an explicit base_url targets a dedicated Inference Endpoint."""
+        endpoint = "https://abc123.us-east-1.aws.endpoints.huggingface.cloud/v1"
+        with patch("ai_client.openai_client.OpenAI") as mock_openai:
+            client = create_ai_client("huggingface", api_key="test-key", base_url=endpoint)
+            assert isinstance(client, HuggingFaceClient)
+            assert client.base_url == endpoint
+            assert mock_openai.call_args.kwargs["base_url"] == endpoint
 
     def test_create_openrouter_client(self):
         """Test creating OpenRouter client (uses OpenAI)."""

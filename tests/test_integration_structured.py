@@ -129,7 +129,7 @@ class TestClaudeStructuredOutput:
         """Test Claude with simple Pydantic model using tools."""
         client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
         response = client.prompt(
-            "claude-3-5-haiku-20241022",
+            "claude-haiku-4-5",
             "Extract information about: Jane Doe is a 28 year old data scientist.",
             response_format=PersonInfo,
         )
@@ -156,7 +156,7 @@ class TestClaudeStructuredOutput:
         """Test Claude with complex model."""
         client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
         response = client.prompt(
-            "claude-3-5-sonnet-20241022",
+            "claude-sonnet-5",
             'Analyze this article: "Climate Change Impact Report. This report examines '
             'environmental changes, policy recommendations, and economic impacts across 200 pages."',
             response_format=DocumentAnalysis,
@@ -189,7 +189,7 @@ class TestGeminiStructuredOutput:
         """Test Gemini with simple Pydantic model."""
         client = create_ai_client("genai", api_key=os.getenv("GOOGLE_API_KEY"))
         response = client.prompt(
-            "gemini-2.0-flash-exp",
+            "gemini-2.5-flash",
             "Extract information about: Alice Johnson is a 42 year old professor.",
             response_format=PersonInfo,
         )
@@ -265,7 +265,7 @@ class TestCohereStructuredOutput:
         """Test Cohere with simple Pydantic model."""
         client = create_ai_client("cohere", api_key=os.getenv("COHERE_API_KEY"))
         response = client.prompt(
-            "command-r",
+            "command-a-03-2025",
             "Extract information about: Carol Davis is a 35 year old engineer.",
             response_format=PersonInfo,
         )
@@ -287,6 +287,48 @@ class TestCohereStructuredOutput:
         assert "engineer" in data["occupation"].lower()
 
         print(f"\nCohere structured output: {data}")
+
+
+@pytest.mark.integration
+class TestHuggingFaceStructuredOutput:
+    """Integration tests for HuggingFace structured output."""
+
+    # Apertus v1.5 reports supports_structured_output; the older -2509 8B model does not,
+    # in which case the client falls back to JSON mode with the schema in the prompt.
+    MODEL = "swiss-ai/Apertus-v1.5-8B"
+
+    @pytest.fixture(autouse=True)
+    def skip_if_no_api_key(self):
+        """Skip test if API key not set."""
+        if not os.getenv("HUGGINGFACE_API_KEY"):
+            pytest.skip("HUGGINGFACE_API_KEY not set")
+
+    def test_huggingface_simple_structured_output(self):
+        """Test HuggingFace with simple Pydantic model."""
+        client = create_ai_client("huggingface", api_key=os.getenv("HUGGINGFACE_API_KEY"))
+        response = client.prompt(
+            self.MODEL,
+            "Extract information about: Carol Davis is a 35 year old engineer.",
+            response_format=PersonInfo,
+        )
+
+        # Verify response structure
+        assert isinstance(response, LLMResponse)
+        assert response.text != ""
+        assert response.provider == "huggingface"
+
+        # Parse and verify structured data
+        data = json.loads(response.text)
+        assert "name" in data
+        assert "age" in data
+        assert "occupation" in data
+
+        # Verify values
+        assert "carol" in data["name"].lower() or "davis" in data["name"].lower()
+        assert data["age"] == 35
+        assert "engineer" in data["occupation"].lower()
+
+        print(f"\nHuggingFace structured output: {data}")
 
 
 @pytest.mark.integration
@@ -339,7 +381,7 @@ class TestStructuredOutputWithVision:
 
         client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
         response = client.prompt(
-            "claude-3-5-sonnet-20241022",
+            "claude-sonnet-5",
             "Analyze this image and provide manuscript metadata. "
             "Make reasonable guesses if needed.",
             images=[sample_image_path],

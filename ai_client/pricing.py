@@ -168,6 +168,7 @@ class PricingManager:
             "mistral": "mistral",
             "deepseek": "deepseek",
             "alibaba": "alibaba",
+            "huggingface": "huggingface",
             "openrouter": "openrouter",
             "scicore": "scicore",
         }

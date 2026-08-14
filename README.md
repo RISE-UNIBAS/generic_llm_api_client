@@ -67,6 +67,7 @@ print(f"Time: {response.duration:.2f}s")
 | Mistral | `mistral` | Yes | Yes | No |
 | DeepSeek | `deepseek` | Yes | Yes | Via OpenAI |
 | Qwen | `qwen` | Yes | Yes | Via OpenAI |
+| HuggingFace | `huggingface` | Yes | Yes | Via OpenAI |
 | OpenRouter | `openrouter` | Yes | Yes | Via OpenAI |
 | sciCORE | `scicore` | Yes | Yes | Via OpenAI |
 
@@ -308,6 +309,76 @@ client = create_ai_client(
 
 response, _ = client.prompt('deepseek/deepseek-chat', 'Hello!')
 ```
+
+### HuggingFace
+
+HuggingFace is reached through the `huggingface` provider (alias: `hf`), which covers two
+different surfaces.
+
+**1. Inference Providers router (default).** One HuggingFace token gives access to the open-weight
+models in the [Inference Providers catalog](https://huggingface.co/models?inference_provider=all),
+executed by partner providers (Groq, Together, Cerebras, Novita, and others). No `base_url` needed;
+pass any catalog model id as the model:
+
+```python
+from ai_client import create_ai_client
+
+client = create_ai_client('huggingface', api_key='hf_...')
+
+response = client.prompt('deepseek-ai/DeepSeek-V3.1', 'Hello!')
+print(response.text)
+```
+
+Model ids are Hub repo ids and accept an optional routing suffix:
+
+| Suffix | Effect |
+|--------|--------|
+| *(none)* / `:fastest` | Highest-throughput provider (the default) |
+| `:cheapest` | Lowest price per output token |
+| `:preferred` | Your provider preference order from Hub settings |
+| `:<name>` | Pin one provider, e.g. `:groq`, `:together` |
+
+```python
+# Pin the serving provider for reproducible capabilities
+response = client.prompt('deepseek-ai/DeepSeek-V3.1:novita', 'Hello!')
+```
+
+Pinning matters because capabilities vary by provider: not every provider backing a given model
+supports strict structured output or tool calling. When a provider does not, the client falls back
+to JSON mode with the schema in the prompt.
+
+To bill an organization rather than your personal account, pass HuggingFace's header through the
+existing `default_headers` setting:
+
+```python
+client = create_ai_client(
+    'huggingface',
+    api_key='hf_...',
+    default_headers={"X-HF-Bill-To": "my-org-name"}
+)
+```
+
+Cost is **not** populated for HuggingFace responses — `usage.estimated_cost_usd` is `None` (a
+router model can be served by several providers at different prices; see [PRICING.md](PRICING.md)).
+Token counts are still tracked.
+
+**2. Dedicated Inference Endpoints.** For any Hub model the router does not serve, deploy it to
+your own endpoint and pass its URL. Note that the `model` argument is then the *endpoint name*,
+not the Hub repo id:
+
+```python
+client = create_ai_client(
+    'huggingface',
+    api_key='hf_...',
+    base_url='https://abc123.us-east-1.aws.endpoints.huggingface.cloud/v1'
+)
+
+response = client.prompt('my-endpoint-name', 'Hello!')  # endpoint name, not repo id
+```
+
+Dedicated endpoints scale to zero after an hour of inactivity, with a 3-5 minute cold start; the
+built-in retry is fixed at 3 attempts with a 60s maximum backoff, so the first call to an idle
+endpoint can come back as an error response. Retry it once the endpoint is warm.
 
 ### Accessing Response Metadata
 

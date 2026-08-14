@@ -745,6 +745,7 @@ def create_ai_client(
     from .alibaba_client import AlibabaClient
     from .cohere_client import CohereClient
     from .xai_client import XAIClient
+    from .huggingface_client import HuggingFaceClient
 
     provider_map = {
         "openai": OpenAIClient,
@@ -756,6 +757,8 @@ def create_ai_client(
         "alibaba": AlibabaClient,
         "cohere": CohereClient,
         "x-ai": XAIClient,
+        "huggingface": HuggingFaceClient,
+        "hf": HuggingFaceClient,  # Alias for 'huggingface'
         "openrouter": OpenAIClient,  # Uses OpenAI-compatible API
         "scicore": OpenAIClient,  # Uses OpenAI-compatible API
     }

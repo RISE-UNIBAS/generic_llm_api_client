@@ -326,7 +326,7 @@ class TestFilesWithOtherProviders:
         client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
 
         response = client.prompt(
-            "claude-3-5-haiku-20241022",
+            "claude-haiku-4-5",
             "Summarize this document briefly.",
             files=[sample_text_file],
         )
@@ -345,7 +345,7 @@ class TestFilesWithOtherProviders:
         client = create_ai_client("genai", api_key=os.getenv("GOOGLE_API_KEY"))
 
         response = client.prompt(
-            "gemini-2.0-flash-exp",
+            "gemini-2.5-flash",
             "What is this document about?",
             files=[sample_text_file],
         )

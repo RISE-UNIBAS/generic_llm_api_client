@@ -64,9 +64,7 @@ class TestClaudeVision:
     def test_claude_vision_with_image(self, sample_image_path):
         """Test Claude vision model with image."""
         client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
-        response = client.prompt(
-            "claude-3-5-sonnet-20241022", VISION_PROMPT, images=[sample_image_path]
-        )
+        response = client.prompt("claude-sonnet-5", VISION_PROMPT, images=[sample_image_path])
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -97,7 +95,7 @@ class TestGeminiVision:
     def test_gemini_vision_with_image(self, sample_image_path):
         """Test Gemini vision model with image."""
         client = create_ai_client("genai", api_key=os.getenv("GOOGLE_API_KEY"))
-        response = client.prompt("gemini-2.0-flash-exp", VISION_PROMPT, images=[sample_image_path])
+        response = client.prompt("gemini-2.5-flash", VISION_PROMPT, images=[sample_image_path])
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -231,6 +229,36 @@ class TestAlibabaVision:
 
 
 @pytest.mark.integration
+class TestHuggingFaceVision:
+    """Integration tests for HuggingFace vision models."""
+
+    # The v1.5 Apertus models accept image input; the older -2509 ones are text-only.
+    MODEL = "swiss-ai/Apertus-v1.5-8B"
+
+    @pytest.fixture(autouse=True)
+    def skip_if_no_api_key(self):
+        """Skip test if API key not set."""
+        if not os.getenv("HUGGINGFACE_API_KEY"):
+            pytest.skip("HUGGINGFACE_API_KEY not set")
+
+    def test_huggingface_vision_with_image(self, sample_image_path):
+        """Test HuggingFace vision model with image."""
+        client = create_ai_client("huggingface", api_key=os.getenv("HUGGINGFACE_API_KEY"))
+
+        response = client.prompt(self.MODEL, VISION_PROMPT, images=[sample_image_path])
+
+        # Verify response structure
+        assert isinstance(response, LLMResponse)
+        assert response.text != ""
+        assert response.provider == "huggingface"
+
+        # Verify timing
+        assert response.duration > 0
+
+        print(f"\nHuggingFace vision response: {response.text}")
+
+
+@pytest.mark.integration
 class TestMultiImageSupport:
     """Test support for multiple images in a single request."""
 
@@ -275,7 +303,7 @@ class TestMultiImageSupport:
         client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
 
         response = client.prompt(
-            "claude-3-5-sonnet-20241022",
+            "claude-sonnet-5",
             "How many images do you see?",
             images=[sample_image_path, sample_image_path],
         )
