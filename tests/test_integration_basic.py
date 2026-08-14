@@ -69,13 +69,13 @@ class TestClaudeIntegration:
     def test_claude_basic_prompt(self):
         """Test basic Claude prompt with real API."""
         client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
-        response = client.prompt("claude-3-5-haiku-20241022", SIMPLE_PROMPT)
+        response = client.prompt("claude-haiku-4-5", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
         assert response.text != ""
         assert response.provider == "anthropic"
-        assert "claude-3-5-haiku" in response.model.lower()  # Check for model family
+        assert "claude-haiku" in response.model.lower()  # Check for model family
         assert response.finish_reason in ["stop", "end_turn", "max_tokens"]
 
         # Verify usage tracking
@@ -102,7 +102,7 @@ class TestGeminiIntegration:
     def test_gemini_basic_prompt(self):
         """Test basic Gemini prompt with real API."""
         client = create_ai_client("genai", api_key=os.getenv("GOOGLE_API_KEY"))
-        response = client.prompt("gemini-2.0-flash-exp", SIMPLE_PROMPT)
+        response = client.prompt("gemini-2.5-flash", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -238,12 +238,12 @@ class TestOpenRouterIntegration:
             base_url="https://openrouter.ai/api/v1",
         )
         # Use a cheap model available on OpenRouter
-        response = client.prompt("openai/gpt-3.5-turbo", SIMPLE_PROMPT)
+        response = client.prompt("openai/gpt-4o-mini", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
         assert response.text != ""
-        assert response.provider == "openai"  # OpenRouter uses OpenAI client
+        assert response.provider == "openrouter"  # PROVIDER_ID is patched on the instance
         assert response.finish_reason in ["stop", "end_turn", "length"]
 
         # Verify usage tracking
@@ -270,8 +270,8 @@ class TestSciCOREIntegration:
     def test_scicore_basic_prompt(self):
         """Test basic sciCORE prompt with real API."""
         # Note: Update base_url and model according to your sciCORE setup
-        base_url = os.getenv("SCICORE_BASE_URL", "https://api.scicore.unibas.ch/v1")
-        model = os.getenv("SCICORE_MODEL", "gpt-4")
+        base_url = os.getenv("SCICORE_BASE_URL", "https://llm-api-h200.ceda.unibas.ch/v1")
+        model = os.getenv("SCICORE_MODEL", "qwen35-397b-a17b-fp8")
 
         client = create_ai_client(
             "scicore", api_key=os.getenv("SCICORE_API_KEY"), base_url=base_url
@@ -297,7 +297,7 @@ class TestSciCOREIntegration:
                 )
 
         assert response.text != ""
-        assert response.provider == "openai"  # sciCORE uses OpenAI client
+        assert response.provider == "scicore"  # PROVIDER_ID is patched on the instance
         assert response.finish_reason in ["stop", "end_turn", "length"]
 
         # Verify usage tracking
@@ -321,13 +321,13 @@ class TestCohereIntegration:
     def test_cohere_basic_prompt(self):
         """Test basic Cohere prompt with real API."""
         client = create_ai_client("cohere", api_key=os.getenv("COHERE_API_KEY"))
-        response = client.prompt("command-r", SIMPLE_PROMPT)
+        response = client.prompt("command-a-03-2025", SIMPLE_PROMPT)
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
         assert response.text != ""
         assert response.provider == "cohere"
-        assert response.model == "command-r"
+        assert response.model == "command-a-03-2025"
         assert response.finish_reason in ["stop", "complete", "COMPLETE"]
 
         # Verify usage tracking
@@ -424,16 +424,16 @@ class TestProviderParity:
             providers_to_test.append(("openai", "gpt-4o-mini", os.getenv("OPENAI_API_KEY")))
         if os.getenv("ANTHROPIC_API_KEY"):
             providers_to_test.append(
-                ("anthropic", "claude-3-5-haiku-20241022", os.getenv("ANTHROPIC_API_KEY"))
+                ("anthropic", "claude-haiku-4-5", os.getenv("ANTHROPIC_API_KEY"))
             )
         if os.getenv("GOOGLE_API_KEY"):
-            providers_to_test.append(("genai", "gemini-2.0-flash-exp", os.getenv("GOOGLE_API_KEY")))
+            providers_to_test.append(("genai", "gemini-2.5-flash", os.getenv("GOOGLE_API_KEY")))
         if os.getenv("MISTRAL_API_KEY"):
             providers_to_test.append(
                 ("mistral", "mistral-small-latest", os.getenv("MISTRAL_API_KEY"))
             )
         if os.getenv("COHERE_API_KEY"):
-            providers_to_test.append(("cohere", "command-r", os.getenv("COHERE_API_KEY")))
+            providers_to_test.append(("cohere", "command-a-03-2025", os.getenv("COHERE_API_KEY")))
         if os.getenv("DEEPSEEK_API_KEY"):
             providers_to_test.append(("deepseek", "deepseek-chat", os.getenv("DEEPSEEK_API_KEY")))
         if os.getenv("ALIBABA_API_KEY"):

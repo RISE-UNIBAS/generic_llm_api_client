@@ -64,9 +64,7 @@ class TestClaudeVision:
     def test_claude_vision_with_image(self, sample_image_path):
         """Test Claude vision model with image."""
         client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
-        response = client.prompt(
-            "claude-3-5-sonnet-20241022", VISION_PROMPT, images=[sample_image_path]
-        )
+        response = client.prompt("claude-sonnet-5", VISION_PROMPT, images=[sample_image_path])
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -97,7 +95,7 @@ class TestGeminiVision:
     def test_gemini_vision_with_image(self, sample_image_path):
         """Test Gemini vision model with image."""
         client = create_ai_client("genai", api_key=os.getenv("GOOGLE_API_KEY"))
-        response = client.prompt("gemini-2.0-flash-exp", VISION_PROMPT, images=[sample_image_path])
+        response = client.prompt("gemini-2.5-flash", VISION_PROMPT, images=[sample_image_path])
 
         # Verify response structure
         assert isinstance(response, LLMResponse)
@@ -305,7 +303,7 @@ class TestMultiImageSupport:
         client = create_ai_client("anthropic", api_key=os.getenv("ANTHROPIC_API_KEY"))
 
         response = client.prompt(
-            "claude-3-5-sonnet-20241022",
+            "claude-sonnet-5",
             "How many images do you see?",
             images=[sample_image_path, sample_image_path],
         )
