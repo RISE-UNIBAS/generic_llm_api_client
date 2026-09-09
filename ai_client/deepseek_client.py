@@ -14,7 +14,7 @@ from .response import LLMResponse
 logger = logging.getLogger(__name__)
 
 # DeepSeek model name fragments that indicate vision/multimodal support
-_VISION_MODEL_KEYWORDS = ("vl",)
+_VISION_MODEL_KEYWORDS = ("vl", "vision")
 
 
 class DeepSeekClient(OpenAIClient):
