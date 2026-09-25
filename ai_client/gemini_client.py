@@ -17,7 +17,8 @@ import requests
 
 from .base_client import BaseAIClient
 from .response import LLMResponse, Usage
-from .pricing import calculate_cost
+from .pricing import apply_costs
+from .reasoning import reported_reasoning, uncounted_reasoning
 from .utils import extract_json_from_text
 
 logger = logging.getLogger(__name__)
@@ -247,20 +248,30 @@ class GeminiClient(BaseAIClient):
 
         usage = Usage()
         if hasattr(raw_response, "usage_metadata"):
+            metadata = raw_response.usage_metadata
             usage = Usage(
-                input_tokens=raw_response.usage_metadata.prompt_token_count,
-                output_tokens=raw_response.usage_metadata.candidates_token_count,
-                total_tokens=raw_response.usage_metadata.total_token_count,
+                input_tokens=metadata.prompt_token_count,
+                output_tokens=metadata.candidates_token_count,
+                total_tokens=metadata.total_token_count,
             )
-            # Calculate cost if pricing data is available
-            costs = calculate_cost(
-                self.PROVIDER_ID,
-                model,
+
+            # Every count on usage_metadata is optional, and a thinking response that
+            # stopped early reports its thoughts but no candidates. Recover the completion
+            # count from the total so the three still add up, rather than charging the whole
+            # remainder as reasoning.
+            if metadata.candidates_token_count is None and usage.total_tokens:
+                reported = reported_reasoning(raw_response) or 0
+                usage.output_tokens = max(0, usage.total_tokens - usage.input_tokens - reported)
+
+            usage.reasoning_tokens = uncounted_reasoning(
                 usage.input_tokens,
                 usage.output_tokens,
+                usage.total_tokens,
+                raw_response,
+                provider=self.PROVIDER_ID,
+                model=model,
             )
-            if costs is not None:
-                usage.input_cost_usd, usage.output_cost_usd, usage.estimated_cost_usd = costs
+            apply_costs(usage, self.PROVIDER_ID, model)
 
         # Determine finish reason
         finish_reason = "unknown"

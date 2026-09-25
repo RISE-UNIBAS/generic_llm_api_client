@@ -119,6 +119,159 @@ def is_rate_limit_error(exception: Exception) -> bool:
     return any(indicator in error_message for indicator in rate_limit_indicators)
 
 
+_INPUT_TOKEN_KEYS = ("prompt_tokens", "input_tokens")
+_OUTPUT_TOKEN_KEYS = ("completion_tokens", "output_tokens")
+
+# Discarded-attempt totals travel on the exception itself when a fallback also fails, so
+# the error response can still report what was billed. Per-exception, so thread-safe.
+DISCARDED_ATTRIBUTE = "_ai_client_discarded"
+
+
+def _read_token_count(source, keys) -> Optional[int]:
+    """Read the first of keys present on a mapping or object as a plain integer."""
+    for key in keys:
+        value = source.get(key) if isinstance(source, dict) else getattr(source, key, None)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return None
+
+
+def usage_counts(source) -> Optional[tuple]:
+    """
+    Read token counts from a provider usage object or mapping.
+
+    Providers name the fields differently: OpenAI reports prompt_tokens and
+    completion_tokens, Anthropic input_tokens and output_tokens. Both are accepted.
+
+    Args:
+        source: A usage object or mapping from any provider
+
+    Returns:
+        (input_tokens, output_tokens, total_tokens), or None if no counts were found
+    """
+    if source is None:
+        return None
+
+    input_tokens = _read_token_count(source, _INPUT_TOKEN_KEYS)
+    output_tokens = _read_token_count(source, _OUTPUT_TOKEN_KEYS)
+    if input_tokens is None and output_tokens is None:
+        return None
+
+    input_tokens = input_tokens or 0
+    output_tokens = output_tokens or 0
+    total = _read_token_count(source, ("total_tokens",))
+    return (input_tokens, output_tokens, input_tokens + output_tokens if total is None else total)
+
+
+def billed_cost(source) -> Optional[float]:
+    """
+    Return a cost the provider reported charging, if it gave a usable number.
+
+    Checked by type rather than for None: the attribute exists on any mock object, and a
+    cost of None is not a billed total.
+
+    Args:
+        source: A usage object or mapping from any provider
+
+    Returns:
+        The billed cost in USD, or None if the provider reported none
+    """
+    if source is None:
+        return None
+
+    value = source.get("cost") if isinstance(source, dict) else getattr(source, "cost", None)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
+
+
+def usage_of(payload):
+    """Return the usage object held by a response-shaped payload."""
+    if payload is None:
+        return None
+    return payload.get("usage") if isinstance(payload, dict) else getattr(payload, "usage", None)
+
+
+def error_payload(exception: Exception):
+    """
+    Return the response-shaped payload a failed request carried, if any.
+
+    A request can fail after the provider generated and charged for tokens: structured
+    output that would not validate, or a response stopped by a content filter. The SDKs
+    expose that response in different places, so each is tried in turn. The payload is
+    returned whole rather than as bare counts, so its cost and reasoning details survive
+    alongside them.
+
+    Args:
+        exception: Exception raised by a provider call
+
+    Returns:
+        The payload holding a usage block, or None if the failure carried none
+    """
+    completion = getattr(exception, "completion", None)
+    if usage_counts(getattr(completion, "usage", None)) is not None:
+        return completion
+
+    body = getattr(exception, "body", None)
+    if isinstance(body, dict) and usage_counts(body.get("usage")) is not None:
+        return body
+
+    response = getattr(exception, "response", None)
+    if response is not None:
+        try:
+            parsed = response.json()
+        except Exception:
+            parsed = None
+        if isinstance(parsed, dict) and usage_counts(parsed.get("usage")) is not None:
+            return parsed
+
+    return None
+
+
+def usage_from_error(exception: Exception) -> Optional[tuple]:
+    """
+    Recover the token counts a failed request was still billed for.
+
+    Args:
+        exception: Exception raised by a provider call
+
+    Returns:
+        (input_tokens, output_tokens, total_tokens), or None if the failure carried none
+    """
+    return usage_counts(usage_of(error_payload(exception)))
+
+
+def attach_discarded(exception: Exception, discarded) -> Exception:
+    """
+    Carry discarded-attempt totals on an exception so an error response can report them.
+
+    Args:
+        exception: Exception about to be raised
+        discarded: DiscardedAttempts accumulated before the failure
+
+    Returns:
+        The same exception
+    """
+    try:
+        setattr(exception, DISCARDED_ATTRIBUTE, discarded)
+    except AttributeError:  # exceptions defined with __slots__
+        pass
+    return exception
+
+
+def discarded_from_error(exception: Exception):
+    """
+    Return the discarded-attempt totals attached to an exception, if any.
+
+    Args:
+        exception: Exception caught from a provider call
+
+    Returns:
+        The DiscardedAttempts carried by the exception, or None
+    """
+    return getattr(exception, DISCARDED_ATTRIBUTE, None)
+
+
 def get_retry_delay_from_error(exception: Exception) -> Optional[float]:
     """
     Extract retry delay from error message if available.

@@ -210,13 +210,13 @@ class TestHuggingFaceClient:
 
     def test_cost_left_to_downstream_injection(self, mock_huggingface_response):
         """
-        The library intentionally leaves HuggingFace cost None and tracks tokens only.
+        A bare HuggingFace router id resolves no cost, so tokens are tracked alone.
 
-        There is deliberately no 'huggingface' block in pricing.json: a router model is
-        served by different partner providers at different prices, and the router echoes a
-        normalized model id (e.g. 'swiss-ai/apertus-8b-instruct') that differs from the
-        requested id, so a static per-model price would be misleading. Cost is injected
-        downstream by the benchmark harness instead.
+        pricing.json keys its huggingface entries by provider-pinned id, because a router
+        model is served by different partner providers at different prices and a bare id
+        routes to whichever is fastest. Requesting an unpinned id therefore misses the
+        table by design; pin a provider when an exact price matters. Cost for unpinned
+        runs is injected downstream by the benchmark harness.
         """
         with patch("ai_client.openai_client.OpenAI") as mock_openai_class:
             mock_client = Mock()

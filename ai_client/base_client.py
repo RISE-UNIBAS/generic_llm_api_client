@@ -11,11 +11,18 @@ import abc
 import time
 import asyncio
 from typing import List, Tuple, Any, Optional, Union
-from .response import LLMResponse, Usage
+from .response import DiscardedAttempts, LLMResponse, Usage
+from .pricing import apply_costs
+from .reasoning import uncounted_reasoning
 from .utils import (
     retry_with_exponential_backoff,
     read_text_files,
     resize_image_if_needed,
+    billed_cost,
+    discarded_from_error,
+    error_payload,
+    usage_counts,
+    usage_of,
 )
 from .content_order import ContentOrder, SLOT_PROMPT, SLOT_IMAGES, SLOT_FILES
 
@@ -347,6 +354,10 @@ class BaseAIClient(abc.ABC):
             # Pass to provider via kwargs (internal parameter)
             kwargs["_tool_definitions"] = tool_definitions
 
+        # Bound before the try so the handler can tell a failure that follows a successful
+        # first call from one where nothing succeeded at all.
+        response = None
+
         # Call provider-specific implementation with retry logic
         try:
             # If using tools, don't use response_format in the first call
@@ -410,8 +421,9 @@ class BaseAIClient(abc.ABC):
                 response.conversation_id = conversation_id
 
         except Exception as e:
-            # Create error response
-            response = self._create_error_response(model, str(e))
+            # A tool-calling request makes two billed calls. If the second fails, the first
+            # is still held in `response` and its tokens would otherwise vanish.
+            response = self._create_error_response(model, e, response)
 
         elapsed_time = time.time() - start_time
         response.duration = elapsed_time
@@ -517,24 +529,69 @@ class BaseAIClient(abc.ABC):
             ),
         )
 
-    def _create_error_response(self, model: str, error_message: str) -> LLMResponse:
+    def _create_error_response(
+        self,
+        model: str,
+        error: Any,
+        partial_response: Optional[LLMResponse] = None,
+    ) -> LLMResponse:
         """
         Create an error response when the request fails.
 
+        A request can fail after the provider generated and billed for tokens, and a
+        tool-calling request can fail after an earlier call already succeeded. Both are
+        recorded rather than discarded, so a failed run still accounts for what it cost.
+
         Args:
             model: Model identifier
-            error_message: Error message
+            error: Exception that was raised, or an error message
+            partial_response: Response from an earlier call in the same request, if one
+                succeeded before the failure
 
         Returns:
-            LLMResponse with error information
+            LLMResponse with error information and whatever usage was recovered
         """
+        error_message = str(error)
+        raw_response = {"error": error_message}
+        usage = Usage()
+
+        payload = error_payload(error) if isinstance(error, BaseException) else None
+        counts = usage_counts(usage_of(payload))
+        if counts is not None:
+            usage.input_tokens, usage.output_tokens, usage.total_tokens = counts
+            usage.reasoning_tokens = uncounted_reasoning(
+                usage.input_tokens,
+                usage.output_tokens,
+                usage.total_tokens,
+                payload,
+                provider=self.PROVIDER_ID,
+                model=model,
+            )
+            # A cost the provider billed survives; apply_costs leaves it alone because no
+            # component costs sit beside it.
+            billed = billed_cost(usage_of(payload))
+            if billed is not None:
+                usage.estimated_cost_usd = billed
+            apply_costs(usage, self.PROVIDER_ID, model)
+            raw_response["usage"] = usage.to_dict()
+
+        # Attempts billed before the failure: those a fallback threw away, and any earlier
+        # call in this request that succeeded and is now being replaced by this response.
+        if isinstance(error, BaseException):
+            discarded = discarded_from_error(error)
+            if discarded is not None:
+                discarded.apply_to(usage)
+
+        if partial_response is not None and partial_response.usage is not None:
+            DiscardedAttempts.from_usage(partial_response.usage).apply_to(usage)
+
         return LLMResponse(
             text="",
             model=model,
             provider=self.PROVIDER_ID,
             finish_reason="error",
-            usage=Usage(),
-            raw_response={"error": error_message},
+            usage=usage,
+            raw_response=raw_response,
             duration=0.0,
         )
 

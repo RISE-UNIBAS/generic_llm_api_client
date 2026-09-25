@@ -171,3 +171,97 @@ class TestOpenAIClient:
             assert models[1][0] == "gpt-3.5-turbo"
             # Check that dates are formatted
             assert isinstance(models[0][1], str)
+
+
+class TestTokenCapParameter:
+    """Tests for sending max_tokens under the name each model expects."""
+
+    @staticmethod
+    def _client_and_api(openai_class, mock_openai_response):
+        """Wire a mocked SDK client that returns the given response."""
+        api = Mock()
+        openai_class.return_value = api
+        api.chat.completions.create.return_value = mock_openai_response
+        return create_ai_client("openai", api_key="test-key"), api
+
+    def test_newer_model_sends_max_completion_tokens(self, mock_openai_response):
+        """Test gpt-5 gets the parameter name its chat endpoint requires."""
+        with patch("ai_client.openai_client.OpenAI") as openai_class:
+            client, api = self._client_and_api(openai_class, mock_openai_response)
+            client.prompt("gpt-5", "Hello", max_tokens=100)
+
+        sent = api.chat.completions.create.call_args.kwargs
+        assert sent["max_completion_tokens"] == 100
+        assert "max_tokens" not in sent
+
+    def test_older_model_still_sends_max_tokens(self, mock_openai_response):
+        """Test the rename does not touch models that accept the original name."""
+        with patch("ai_client.openai_client.OpenAI") as openai_class:
+            client, api = self._client_and_api(openai_class, mock_openai_response)
+            client.prompt("gpt-4o", "Hello", max_tokens=100)
+
+        sent = api.chat.completions.create.call_args.kwargs
+        assert sent["max_tokens"] == 100
+        assert "max_completion_tokens" not in sent
+
+    def test_routed_and_pinned_ids_are_recognised(self):
+        """Test a provider prefix or a routing suffix does not hide the model family."""
+        assert OpenAIClient._uses_max_completion_tokens("openai/gpt-5") is True
+        assert OpenAIClient._uses_max_completion_tokens("gpt-5:groq") is True
+        assert OpenAIClient._uses_max_completion_tokens("o3-mini") is True
+
+    def test_prefix_match_does_not_catch_unrelated_ids(self):
+        """Test matching is by prefix, so an id merely containing o1 is left alone."""
+        assert OpenAIClient._uses_max_completion_tokens("gpt-4o") is False
+        assert OpenAIClient._uses_max_completion_tokens("qwen-o1-preview") is False
+        assert OpenAIClient._uses_max_completion_tokens("mistral-large") is False
+
+    def test_unlisted_model_is_retried_once(self, mock_openai_response):
+        """Test a model not in the list recovers from the rejection by itself."""
+        rejection = Exception(
+            "Unsupported parameter: 'max_tokens' is not supported with this model. "
+            "Use 'max_completion_tokens' instead."
+        )
+        with patch("ai_client.openai_client.OpenAI") as openai_class:
+            api = Mock()
+            openai_class.return_value = api
+            api.chat.completions.create.side_effect = [rejection, mock_openai_response]
+
+            client = create_ai_client("openai", api_key="test-key")
+            response = client.prompt("brand-new-model", "Hello", max_tokens=100)
+
+        assert response.finish_reason == "stop"
+        assert api.chat.completions.create.call_count == 2
+        assert api.chat.completions.create.call_args.kwargs["max_completion_tokens"] == 100
+
+    def test_rejected_attempt_is_not_counted_as_billed(self, mock_openai_response):
+        """Test a 400 rejection generated nothing, so it is not recorded as an attempt."""
+        rejection = Exception(
+            "Unsupported parameter: 'max_tokens'. Use 'max_completion_tokens' instead."
+        )
+        with patch("ai_client.openai_client.OpenAI") as openai_class:
+            api = Mock()
+            openai_class.return_value = api
+            api.chat.completions.create.side_effect = [rejection, mock_openai_response]
+
+            client = create_ai_client("openai", api_key="test-key")
+            usage = client.prompt("brand-new-model", "Hello", max_tokens=100).usage
+
+        assert usage.attempts == 1
+        assert usage.discarded_input_tokens == 0
+
+    def test_unrelated_failure_is_not_retried(self, mock_openai_response):
+        """Test only a token cap rejection triggers the rename."""
+        with (
+            patch("ai_client.openai_client.OpenAI") as openai_class,
+            patch("ai_client.utils.time.sleep"),
+        ):
+            api = Mock()
+            openai_class.return_value = api
+            api.chat.completions.create.side_effect = Exception("invalid api key")
+
+            client = create_ai_client("openai", api_key="test-key")
+            response = client.prompt("gpt-4o", "Hello", max_tokens=100)
+
+        assert response.finish_reason == "error"
+        assert "max_completion_tokens" not in api.chat.completions.create.call_args.kwargs

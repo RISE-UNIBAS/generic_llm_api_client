@@ -5,7 +5,7 @@ The package now includes automatic cost calculation for all API requests based o
 ## Features
 
 - **Automatic Cost Calculation**: Costs are calculated automatically for every request
-- **Separate Input/Output Costs**: Track input tokens, output tokens, and total costs separately
+- **Separate Cost Components**: Track input, output and reasoning costs, and the total, separately
 - **Up-to-date Pricing**: Bundled pricing snapshot, refreshed from the benchmark repo at each release (see below)
 - **Injectable Pricing**: Update pricing data externally when needed
 
@@ -16,7 +16,47 @@ Every `LLMResponse` includes a `Usage` object with the following cost fields:
 ```python
 response.usage.input_cost_usd     # Cost for input tokens (in USD)
 response.usage.output_cost_usd    # Cost for output tokens (in USD)
-response.usage.estimated_cost_usd # Total cost (in USD)
+response.usage.reasoning_cost_usd # Cost for reasoning tokens (in USD)
+response.usage.estimated_cost_usd # Total cost, covering all three (in USD)
+```
+
+### Reasoning tokens
+
+`usage.reasoning_tokens` counts only reasoning a provider billed **outside**
+`output_tokens`. Providers disagree on where they put it: Gemini and xAI report it
+separately, while the OpenAI family already counts it inside the completion. Recording the
+uncounted remainder makes one rule hold everywhere:
+
+```
+input_tokens + output_tokens + reasoning_tokens == total_tokens
+```
+
+`reasoning_tokens` is `0` when a provider reported no reasoning, and `None` when it reported
+no total and therefore told us nothing. The two are not the same and are kept apart.
+Reasoning is charged at the model's **output** rate.
+
+### Provider-billed costs are never recalculated
+
+Some providers return the cost they actually charged. OpenRouter does, and because its
+routes are unpinned — one model name can map to a dozen backends at different prices — its
+figure is the only accurate one. Such a total arrives with `input_cost_usd` and
+`output_cost_usd` left `None`, which is how it is recognised, and no list-price calculation
+replaces it.
+
+So: where the component costs exist they sum to `estimated_cost_usd`; where a billed total
+exists without components, it stands as it is.
+
+### Attempts that were billed but not returned
+
+A structured-output request that fails and falls back is charged twice. The discarded
+attempt is reported separately rather than folded into the successful response:
+
+```python
+response.usage.attempts                 # billable attempts behind this response
+response.usage.discarded_input_tokens   # tokens billed by attempts that were thrown away
+response.usage.discarded_output_tokens
+response.usage.discarded_reasoning_tokens
+response.usage.discarded_cost_usd      # what the provider billed, where it reported one
 ```
 
 ## Example Usage
@@ -98,15 +138,18 @@ Pricing data is included for:
 
 ### A note on HuggingFace pricing
 
-HuggingFace cost is **not** resolved at runtime — `usage.estimated_cost_usd` is `None` for
-HuggingFace responses; cost is injected downstream by the benchmark harness. The `huggingface`
-entries here exist for that step, keyed to canonical model ids (matching the benchmark's
-`model_aliases.json`).
+HuggingFace cost resolves only when the model id **pins a provider**, because the
+`huggingface` entries are keyed that way:
 
-It cannot be automatic for two reasons: the router echoes a *normalized* model id (lowercased,
-date suffix dropped) that will not match the canonical key, and a model may be served by several
-providers at different prices (a bare id routes to the fastest). Pin a provider with a
-`:<provider>` suffix when an exact price matters.
+```python
+client.prompt('swiss-ai/Apertus-v1.5-8B:publicai', '...')  # priced
+client.prompt('swiss-ai/Apertus-v1.5-8B', '...')           # estimated_cost_usd is None
+```
+
+A bare router id routes to whichever partner provider is fastest, and the same model is
+served by several of them at different prices, so there is no single price to report. Pin a
+provider with a `:<provider>` suffix when an exact price matters; otherwise tokens are
+tracked and cost is left for the benchmark harness to inject downstream.
 
 ## Cost Calculation Details
 
@@ -115,7 +158,12 @@ providers at different prices (a bare id routes to the fastest). Pin a provider 
 3. Calculates:
    - `input_cost = (input_tokens / 1,000,000) * input_price_per_million`
    - `output_cost = (output_tokens / 1,000,000) * output_price_per_million`
-   - `total_cost = input_cost + output_cost`
+   - `reasoning_cost = (reasoning_tokens / 1,000,000) * output_price_per_million`
+   - `total_cost = input_cost + output_cost + reasoning_cost`
+
+The lookup uses the model **as requested**, not the id the response echoed back: routers
+normalise and rewrite model ids, and a rewritten id misses the table. `response.model` still
+reports whatever actually answered.
 
 ## When Pricing is Not Available
 

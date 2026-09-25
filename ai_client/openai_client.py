@@ -17,11 +17,23 @@ from typing import List, Tuple, Any, Optional
 from openai import OpenAI
 
 from .base_client import BaseAIClient
-from .response import LLMResponse, Usage
-from .pricing import calculate_cost
-from .utils import extract_json_from_text
+from .response import DiscardedAttempts, LLMResponse, Usage
+from .pricing import apply_costs, calculate_cost_components
+from .reasoning import uncounted_reasoning
+from .utils import (
+    attach_discarded,
+    billed_cost,
+    error_payload,
+    extract_json_from_text,
+    usage_counts,
+    usage_of,
+)
 
 logger = logging.getLogger(__name__)
+
+# Model families whose chat endpoint rejects max_tokens and requires
+# max_completion_tokens instead. Matched as a prefix on the bare model id.
+MAX_COMPLETION_TOKENS_MODELS = ("gpt-5", "gpt-6", "o1", "o3", "o4")
 
 
 class OpenAIClient(BaseAIClient):
@@ -251,6 +263,12 @@ class OpenAIClient(BaseAIClient):
                 params, model, prompt, images, file_content, system_prompt, response_format, kwargs
             )
 
+        # gpt-5 and newer reject max_tokens on the chat endpoint. Renaming it up front for
+        # the families we know about avoids a rejected round trip; _call_with_token_cap_retry
+        # covers the ones released after this version.
+        if self._uses_max_completion_tokens(model):
+            self._rename_token_cap(params)
+
         # Handle tool calling
         tool_definitions = kwargs.pop("_tool_definitions", None)
         if tool_definitions:
@@ -268,6 +286,13 @@ class OpenAIClient(BaseAIClient):
             ]
             params["tool_choice"] = "auto"
 
+        # A failed attempt is still billed, so its tokens are accumulated here and reported
+        # beside the successful response. Local to this call, never on self: one client
+        # object serves many worker threads, and shared state would attribute one thread's
+        # waste to another's response. Note _do_prompt_with_retry re-enters this method on
+        # failure, so the totals cover the final attempt only.
+        discarded = DiscardedAttempts()
+
         # Handle structured output
         if response_format:
             # Check if it's a Pydantic model (v1 or v2)
@@ -278,9 +303,12 @@ class OpenAIClient(BaseAIClient):
                 # Use beta.chat.completions.parse for Pydantic v2 structured output
                 try:
                     params["response_format"] = response_format
-                    raw_response = self.api_client.beta.chat.completions.parse(**params)
-                    return self._create_response_from_parsed(raw_response, model)
+                    raw_response = self._call_with_token_cap_retry(
+                        self.api_client.beta.chat.completions.parse, params, model
+                    )
+                    return self._create_response_from_parsed(raw_response, model, discarded)
                 except Exception as e:
+                    wasted = self._record_discarded_attempt(discarded, e, self.PROVIDER_ID, model)
                     if self._is_non_chat_model_error(e):
                         logger.warning(
                             f"Model {model} does not support chat completions, "
@@ -288,9 +316,12 @@ class OpenAIClient(BaseAIClient):
                         )
                         params.pop("response_format", None)
                         return self._do_completions_api(
-                            params, model, response_format
+                            params, model, response_format, discarded
                         )  # auto-fallback
-                    logger.warning(f"Structured output failed, falling back to JSON mode: {e}")
+                    logger.warning(
+                        f"Structured output failed, falling back to JSON mode: {e}."
+                        f"{wasted} A second request will be billed."
+                    )
                     # Fall through to JSON object mode
 
             # Fallback to JSON object mode (for Pydantic v1 or when v2 parse fails)
@@ -328,7 +359,9 @@ class OpenAIClient(BaseAIClient):
 
         # Send the request to OpenAI
         try:
-            raw_response = self.api_client.chat.completions.create(**params)
+            raw_response = self._call_with_token_cap_retry(
+                self.api_client.chat.completions.create, params, model
+            )
         except Exception as e:
             if self._is_non_chat_model_error(e):
                 logger.warning(
@@ -336,10 +369,12 @@ class OpenAIClient(BaseAIClient):
                     f"falling back to v1/completions: {e}"
                 )
                 params.pop("response_format", None)
-                return self._do_completions_api(params, model, response_format)
-            raise
+                return self._do_completions_api(params, model, response_format, discarded)
+            # Only earlier attempts travel here. This failure's own usage is recorded
+            # by _create_error_response; adding it would count the same call twice.
+            raise attach_discarded(e, discarded)
 
-        return self._create_response_from_raw(raw_response, model, response_format)
+        return self._create_response_from_raw(raw_response, model, response_format, discarded)
 
     def _do_responses_api(
         self,
@@ -424,7 +459,11 @@ class OpenAIClient(BaseAIClient):
         return self._create_response_from_responses(raw_response, model, response_format)
 
     def _create_response_from_responses(
-        self, raw_response: Any, model: str, response_format: Optional[Any]
+        self,
+        raw_response: Any,
+        model: str,
+        response_format: Optional[Any],
+        discarded: Optional[DiscardedAttempts] = None,
     ) -> LLMResponse:
         """Create LLMResponse from a v1/responses API response."""
         text = getattr(raw_response, "output_text", "") or ""
@@ -451,14 +490,19 @@ class OpenAIClient(BaseAIClient):
                 output_tokens=raw_response.usage.output_tokens,
                 total_tokens=raw_response.usage.total_tokens,
             )
-            costs = calculate_cost(
-                self.PROVIDER_ID,
-                raw_response.model,
+            usage.reasoning_tokens = uncounted_reasoning(
                 usage.input_tokens,
                 usage.output_tokens,
+                usage.total_tokens,
+                raw_response,
+                provider=self.PROVIDER_ID,
+                model=model,
             )
-            if costs is not None:
-                usage.input_cost_usd, usage.output_cost_usd, usage.estimated_cost_usd = costs
+            # Priced on the requested model, not the id the response echoed back.
+            apply_costs(usage, self.PROVIDER_ID, model)
+
+        if discarded is not None:
+            discarded.apply_to(usage)
 
         return LLMResponse(
             text=text,
@@ -471,6 +515,95 @@ class OpenAIClient(BaseAIClient):
         )
 
     @staticmethod
+    def _uses_max_completion_tokens(model: str) -> bool:
+        """
+        Return True if the model's chat endpoint requires max_completion_tokens.
+
+        Matched as a prefix on the bare id, so a routed name like "openai/gpt-5" or a
+        pinned "gpt-5:groq" resolves, while an unrelated id that merely contains "o1"
+        does not.
+        """
+        bare = model.split("/")[-1].split(":")[0].lower()
+        return bare.startswith(MAX_COMPLETION_TOKENS_MODELS)
+
+    @staticmethod
+    def _rename_token_cap(params: dict) -> bool:
+        """Rename max_tokens to max_completion_tokens, reporting whether it was present."""
+        if "max_tokens" not in params:
+            return False
+        params["max_completion_tokens"] = params.pop("max_tokens")
+        return True
+
+    @staticmethod
+    def _is_token_cap_error(error: Exception) -> bool:
+        """Return True if the provider rejected max_tokens in favour of the newer name."""
+        message = str(error).lower()
+        return "max_tokens" in message and "max_completion_tokens" in message
+
+    def _call_with_token_cap_retry(self, send, params: dict, model: str):
+        """
+        Call a chat endpoint, retrying once if it rejects max_tokens.
+
+        The rejection is a 400 raised before anything is generated, so the discarded
+        attempt is not billed and must not be counted as one.
+
+        Args:
+            send: Bound SDK method taking the request parameters
+            params: Request parameters, renamed in place if the retry fires
+            model: Model identifier, for the log line
+
+        Returns:
+            The provider's response
+        """
+        try:
+            return send(**params)
+        except Exception as error:
+            if not self._is_token_cap_error(error) or not self._rename_token_cap(params):
+                raise
+            logger.warning(
+                f"Model {model} rejected max_tokens; retrying with max_completion_tokens. "
+                f"Add its prefix to MAX_COMPLETION_TOKENS_MODELS to skip this round trip."
+            )
+            return send(**params)
+
+    @staticmethod
+    def _record_discarded_attempt(
+        discarded: DiscardedAttempts, error: Exception, provider: str, model: str
+    ) -> str:
+        """
+        Record the tokens a failed attempt was billed for, if it reported any.
+
+        Args:
+            discarded: Accumulator for this call
+            error: Exception raised by the failed attempt
+            provider: Provider ID, for the pricing lookup
+            model: Model identifier as requested
+
+        Returns:
+            A phrase naming what was wasted, or an empty string if nothing was billed
+        """
+        payload = error_payload(error)
+        counts = usage_counts(usage_of(payload))
+        if counts is None:
+            return ""
+
+        input_tokens, output_tokens, total = counts
+        reasoning = uncounted_reasoning(
+            input_tokens, output_tokens, total, payload, provider=provider, model=model
+        )
+        # A cost the provider billed is the accurate one; list prices are the fallback.
+        cost = billed_cost(usage_of(payload))
+        if cost is None:
+            costs = calculate_cost_components(
+                provider, model, input_tokens, output_tokens, reasoning
+            )
+            cost = costs.total_cost_usd if costs is not None else None
+        discarded.add(input_tokens, output_tokens, cost, reasoning)
+
+        priced = f" (${cost:.6f})" if cost is not None else ""
+        return f" Discarded attempt billed {input_tokens} input + {output_tokens} output{priced}."
+
+    @staticmethod
     def _is_non_chat_model_error(error: Exception) -> bool:
         """Return True if the error indicates the model only supports the v1/completions endpoint."""
         msg = str(error).lower()
@@ -481,6 +614,7 @@ class OpenAIClient(BaseAIClient):
         params: dict,
         model: str,
         response_format: Optional[Any],
+        discarded: Optional[DiscardedAttempts] = None,
     ) -> LLMResponse:
         """
         Call v1/completions (text completions) instead of v1/chat/completions.
@@ -523,11 +657,21 @@ class OpenAIClient(BaseAIClient):
             if p in params:
                 legacy_params[p] = params[p]
 
+        # The legacy endpoint still takes max_tokens, even if the chat path renamed it.
+        if "max_tokens" not in legacy_params and "max_completion_tokens" in params:
+            legacy_params["max_tokens"] = params["max_completion_tokens"]
+
         raw_response = self.api_client.completions.create(**legacy_params)
-        return self._create_response_from_completions(raw_response, model, response_format)
+        return self._create_response_from_completions(
+            raw_response, model, response_format, discarded
+        )
 
     def _create_response_from_completions(
-        self, raw_response: Any, model: str, response_format: Optional[Any]
+        self,
+        raw_response: Any,
+        model: str,
+        response_format: Optional[Any],
+        discarded: Optional[DiscardedAttempts] = None,
     ) -> LLMResponse:
         """Create LLMResponse from a v1/completions response."""
         choice = raw_response.choices[0]
@@ -555,14 +699,19 @@ class OpenAIClient(BaseAIClient):
                 output_tokens=raw_response.usage.completion_tokens,
                 total_tokens=raw_response.usage.total_tokens,
             )
-            costs = calculate_cost(
-                self.PROVIDER_ID,
-                raw_response.model,
+            usage.reasoning_tokens = uncounted_reasoning(
                 usage.input_tokens,
                 usage.output_tokens,
+                usage.total_tokens,
+                raw_response,
+                provider=self.PROVIDER_ID,
+                model=model,
             )
-            if costs is not None:
-                usage.input_cost_usd, usage.output_cost_usd, usage.estimated_cost_usd = costs
+            # Priced on the requested model, not the id the response echoed back.
+            apply_costs(usage, self.PROVIDER_ID, model)
+
+        if discarded is not None:
+            discarded.apply_to(usage)
 
         return LLMResponse(
             text=text,
@@ -574,7 +723,12 @@ class OpenAIClient(BaseAIClient):
             parsed=parsed_data,
         )
 
-    def _create_response_from_parsed(self, raw_response: Any, model: str) -> LLMResponse:
+    def _create_response_from_parsed(
+        self,
+        raw_response: Any,
+        model: str,
+        discarded: Optional[DiscardedAttempts] = None,
+    ) -> LLMResponse:
         """
         Create LLMResponse from OpenAI parsed response (structured output).
 
@@ -616,17 +770,26 @@ class OpenAIClient(BaseAIClient):
                 input_tokens=raw_response.usage.prompt_tokens,
                 output_tokens=raw_response.usage.completion_tokens,
                 total_tokens=raw_response.usage.total_tokens,
-                cached_tokens=cached_tokens if cached_tokens > 0 else None,
+                cached_tokens=(
+                    cached_tokens
+                    if isinstance(cached_tokens, (int, float)) and cached_tokens > 0
+                    else None
+                ),
             )
-            # Calculate cost if pricing data is available
-            costs = calculate_cost(
-                self.PROVIDER_ID,
-                raw_response.model,
+            usage.reasoning_tokens = uncounted_reasoning(
                 usage.input_tokens,
                 usage.output_tokens,
+                usage.total_tokens,
+                raw_response,
+                provider=self.PROVIDER_ID,
+                model=model,
             )
-            if costs is not None:
-                usage.input_cost_usd, usage.output_cost_usd, usage.estimated_cost_usd = costs
+            # Priced on the requested model, not the id the response echoed back: routers
+            # normalize the name, and a normalized name misses the pricing table.
+            apply_costs(usage, self.PROVIDER_ID, model)
+
+        if discarded is not None:
+            discarded.apply_to(usage)
 
         return LLMResponse(
             text=text,
@@ -639,7 +802,11 @@ class OpenAIClient(BaseAIClient):
         )
 
     def _create_response_from_raw(
-        self, raw_response: Any, model: str, response_format: Optional[Any]
+        self,
+        raw_response: Any,
+        model: str,
+        response_format: Optional[Any],
+        discarded: Optional[DiscardedAttempts] = None,
     ) -> LLMResponse:
         """
         Create LLMResponse from OpenAI raw response.
@@ -720,19 +887,26 @@ class OpenAIClient(BaseAIClient):
                 total_tokens=raw_response.usage.total_tokens,
                 cached_tokens=cached_tokens_value,
             )
-            # OpenRouter may include cost information
-            if hasattr(raw_response.usage, "cost"):
-                usage.estimated_cost_usd = raw_response.usage.cost
-            else:
-                # Calculate cost if pricing data is available
-                costs = calculate_cost(
-                    self.PROVIDER_ID,
-                    raw_response.model,
-                    usage.input_tokens,
-                    usage.output_tokens,
-                )
-                if costs is not None:
-                    usage.input_cost_usd, usage.output_cost_usd, usage.estimated_cost_usd = costs
+            # OpenRouter may report what it actually billed. isinstance rather than hasattr:
+            # the attribute exists on any mock, and a cost of None is not a billed total.
+            billed = billed_cost(raw_response.usage)
+            if billed is not None:
+                usage.estimated_cost_usd = billed
+
+            usage.reasoning_tokens = uncounted_reasoning(
+                usage.input_tokens,
+                usage.output_tokens,
+                usage.total_tokens,
+                raw_response,
+                provider=self.PROVIDER_ID,
+                model=model,
+            )
+            # Leaves the billed total above untouched; prices on the requested model, not
+            # the id the response echoed back.
+            apply_costs(usage, self.PROVIDER_ID, model)
+
+        if discarded is not None:
+            discarded.apply_to(usage)
 
         response = LLMResponse(
             text=text,

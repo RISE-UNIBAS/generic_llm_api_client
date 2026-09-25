@@ -4,7 +4,17 @@ Tests for utility functions.
 
 import pytest
 import time
+from types import SimpleNamespace
+from unittest.mock import Mock
+from ai_client.response import DiscardedAttempts
 from ai_client.utils import (
+    attach_discarded,
+    billed_cost,
+    error_payload,
+    usage_of,
+    discarded_from_error,
+    usage_counts,
+    usage_from_error,
     retry_with_exponential_backoff,
     is_rate_limit_error,
     get_retry_delay_from_error,
@@ -191,3 +201,167 @@ class TestExceptions:
         """Test that custom exceptions inherit from Exception."""
         assert issubclass(RateLimitError, Exception)
         assert issubclass(APIError, Exception)
+
+
+class TestUsageCounts:
+    """Tests for reading token counts off a provider usage object."""
+
+    def test_openai_naming(self):
+        """Test prompt_tokens and completion_tokens are recognised."""
+        source = {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}
+
+        assert usage_counts(source) == (10, 20, 30)
+
+    def test_anthropic_naming(self):
+        """Test input_tokens and output_tokens are recognised."""
+        source = {"input_tokens": 10, "output_tokens": 20, "total_tokens": 30}
+
+        assert usage_counts(source) == (10, 20, 30)
+
+    def test_total_is_derived_when_absent(self):
+        """Test a missing total falls back to the sum, as Anthropic reports none."""
+        assert usage_counts({"input_tokens": 10, "output_tokens": 20}) == (10, 20, 30)
+
+    def test_attributes_are_read_as_well_as_keys(self):
+        """Test a live SDK object is accepted, not just a mapping."""
+        source = SimpleNamespace(prompt_tokens=10, completion_tokens=20, total_tokens=30)
+
+        assert usage_counts(source) == (10, 20, 30)
+
+    def test_missing_source_returns_none(self):
+        """Test no usage at all yields None."""
+        assert usage_counts(None) is None
+
+    def test_source_without_counts_returns_none(self):
+        """Test an object carrying no recognisable counts yields None."""
+        assert usage_counts({"something_else": 1}) is None
+
+    def test_non_integer_values_are_ignored(self):
+        """Test a placeholder attribute is not mistaken for a count."""
+        assert usage_counts(Mock()) is None
+
+
+class TestUsageFromError:
+    """Tests for recovering the tokens a failed request was billed for."""
+
+    def test_reads_the_attached_completion(self):
+        """Test usage on a structured-output error is found."""
+        error = Exception("failed")
+        error.completion = SimpleNamespace(
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=20, total_tokens=30)
+        )
+
+        assert usage_from_error(error) == (10, 20, 30)
+
+    def test_reads_the_error_body(self):
+        """Test usage in an SDK error body is found."""
+        error = Exception("failed")
+        error.body = {"usage": {"prompt_tokens": 10, "completion_tokens": 20}}
+
+        assert usage_from_error(error) == (10, 20, 30)
+
+    def test_reads_the_response_payload(self):
+        """Test usage in the raw HTTP response is found."""
+        error = Exception("failed")
+        error.response = Mock()
+        error.response.json.return_value = {"usage": {"prompt_tokens": 10, "completion_tokens": 20}}
+
+        assert usage_from_error(error) == (10, 20, 30)
+
+    def test_unreadable_response_is_tolerated(self):
+        """Test a body that will not parse yields None instead of raising."""
+        error = Exception("failed")
+        error.response = Mock()
+        error.response.json.side_effect = ValueError("not json")
+
+        assert usage_from_error(error) is None
+
+    def test_error_carrying_nothing_returns_none(self):
+        """Test a failure before generation reports no usage."""
+        assert usage_from_error(Exception("connection reset")) is None
+
+
+class TestDiscardedCarrier:
+    """Tests for carrying discarded-attempt totals on an exception."""
+
+    def test_round_trip(self):
+        """Test what was attached comes back out."""
+        discarded = DiscardedAttempts()
+        discarded.add(input_tokens=10, output_tokens=20)
+        error = Exception("failed")
+
+        attach_discarded(error, discarded)
+
+        assert discarded_from_error(error) is discarded
+
+    def test_absent_returns_none(self):
+        """Test an untouched exception carries nothing."""
+        assert discarded_from_error(Exception("failed")) is None
+
+    def test_exception_rejecting_attributes_is_tolerated(self):
+        """Test an exception that refuses attributes does not break the failure path."""
+
+        class Strict(Exception):
+            def __setattr__(self, name, value):
+                raise AttributeError(name)
+
+        error = Strict()
+
+        attach_discarded(error, DiscardedAttempts())
+
+        assert discarded_from_error(error) is None
+
+
+class TestBilledCost:
+    """Tests for reading a cost the provider reported charging."""
+
+    def test_numeric_cost_is_returned(self):
+        """Test a reported cost is read from a mapping or an object."""
+        assert billed_cost({"cost": 0.0123}) == 0.0123
+        assert billed_cost(SimpleNamespace(cost=0.0123)) == 0.0123
+
+    def test_zero_is_a_real_cost(self):
+        """Test a free route reports zero rather than nothing."""
+        assert billed_cost({"cost": 0.0}) == 0.0
+
+    def test_missing_cost_returns_none(self):
+        """Test a provider reporting no cost yields None."""
+        assert billed_cost({"prompt_tokens": 10}) is None
+        assert billed_cost(None) is None
+
+    def test_placeholder_attribute_is_not_a_cost(self):
+        """Test an auto-created attribute is not mistaken for a billed figure."""
+        assert billed_cost(Mock()) is None
+
+
+class TestErrorPayload:
+    """Tests for locating the response a failed request carried."""
+
+    def test_prefers_the_attached_completion(self):
+        """Test the completion is returned whole, so cost and reasoning survive."""
+        error = Exception("failed")
+        error.completion = SimpleNamespace(
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=20, cost=0.5)
+        )
+
+        payload = error_payload(error)
+
+        assert billed_cost(usage_of(payload)) == 0.5
+
+    def test_falls_back_to_the_error_body(self):
+        """Test a payload carried in the error body is found."""
+        error = Exception("failed")
+        error.body = {"usage": {"prompt_tokens": 10, "completion_tokens": 20, "cost": 0.5}}
+
+        assert billed_cost(usage_of(error_payload(error))) == 0.5
+
+    def test_ignores_a_payload_without_usage(self):
+        """Test a body carrying no usage is not treated as the payload."""
+        error = Exception("failed")
+        error.body = {"message": "bad request"}
+
+        assert error_payload(error) is None
+
+    def test_returns_none_when_nothing_was_billed(self):
+        """Test a failure before generation carries no payload."""
+        assert error_payload(Exception("connection reset")) is None

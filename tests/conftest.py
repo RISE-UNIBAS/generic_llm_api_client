@@ -2,8 +2,38 @@
 Shared test fixtures and configuration for pytest.
 """
 
+import json
 import pytest
 from unittest.mock import Mock
+
+import ai_client.pricing
+from ai_client.pricing import set_pricing_file
+
+
+@pytest.fixture
+def stub_pricing(tmp_path):
+    """
+    Point the global PricingManager at a small pricing table for one test.
+
+    The bundled pricing.json is regenerated from the benchmark repo at every release, so
+    asserting on a real model's price would make a test fail whenever a provider changes
+    its rates. Call the yielded function with {date: {provider: {model: {...}}}}.
+
+    Resets the module-level manager afterwards; it is cached process-wide and would
+    otherwise leak into unrelated tests.
+    """
+
+    def _stub(table):
+        path = tmp_path / "pricing.json"
+        path.write_text(
+            json.dumps({"metadata": {"version": "test"}, "pricing": table}), encoding="utf-8"
+        )
+        set_pricing_file(str(path))
+        return path
+
+    yield _stub
+
+    ai_client.pricing._pricing_manager = None
 
 
 @pytest.fixture
@@ -56,6 +86,87 @@ def mock_huggingface_response():
     # attribute so the client falls through to the pricing.json lookup.
     del response.usage.cost
     return response
+
+
+@pytest.fixture
+def mock_reasoning_response():
+    """
+    Mock an OpenAI-shaped response whose reasoning sits outside completion_tokens.
+
+    This is the x-ai shape: total exceeds prompt + completion by the reasoning count, so
+    the tokens are billed but invisible to an input/output-only reading.
+    """
+    response = Mock()
+    response.id = "chatcmpl-reasoning-123"
+    response.model = "grok-4.6"
+    response.choices = [Mock()]
+    response.choices[0].message = Mock()
+    response.choices[0].message.content = "Thought about it."
+    response.choices[0].message.tool_calls = None
+    response.choices[0].finish_reason = "stop"
+    response.usage = Mock()
+    response.usage.prompt_tokens = 100
+    response.usage.completion_tokens = 200
+    response.usage.total_tokens = 500
+    response.usage.completion_tokens_details = Mock()
+    response.usage.completion_tokens_details.reasoning_tokens = 200
+    response.usage.prompt_tokens_details = Mock()
+    response.usage.prompt_tokens_details.cached_tokens = 0
+    del response.usage.cost
+    return response
+
+
+@pytest.fixture
+def mock_openrouter_response():
+    """
+    Mock an OpenRouter response carrying the cost the provider actually billed.
+
+    OpenRouter routes are unpinned, so its own figure is the only accurate one and must
+    never be replaced by a list-price calculation.
+    """
+    response = Mock()
+    response.id = "chatcmpl-or-123"
+    response.model = "openai/gpt-4o"
+    response.choices = [Mock()]
+    response.choices[0].message = Mock()
+    response.choices[0].message.content = "Routed."
+    response.choices[0].message.tool_calls = None
+    response.choices[0].finish_reason = "stop"
+    response.usage = Mock()
+    response.usage.prompt_tokens = 1_000_000
+    response.usage.completion_tokens = 1_000_000
+    response.usage.total_tokens = 2_000_000
+    response.usage.cost = 0.0123
+    response.usage.prompt_tokens_details = Mock()
+    response.usage.prompt_tokens_details.cached_tokens = 0
+    return response
+
+
+@pytest.fixture
+def mock_gemini_thinking_response():
+    """Mock a Gemini response whose thinking tokens sit outside candidates_token_count."""
+    response = Mock()
+    response.text = "Thought about it."
+    response.usage_metadata = Mock()
+    response.usage_metadata.prompt_token_count = 100
+    response.usage_metadata.candidates_token_count = 200
+    response.usage_metadata.total_token_count = 500
+    response.usage_metadata.thoughts_token_count = 200
+    response.candidates = [Mock()]
+    response.candidates[0].finish_reason = "STOP"
+    return response
+
+
+@pytest.fixture
+def mock_gemini_truncated_thinking_response(mock_gemini_thinking_response):
+    """
+    Mock a Gemini thinking response that stopped early and reported no candidates count.
+
+    Every count on usage_metadata is optional; this is the shape that crashed cost
+    calculation before the counts were coerced.
+    """
+    mock_gemini_thinking_response.usage_metadata.candidates_token_count = None
+    return mock_gemini_thinking_response
 
 
 @pytest.fixture

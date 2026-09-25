@@ -8,9 +8,26 @@ to automatically calculate estimated costs for API requests.
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, NamedTuple, Optional, Tuple
+
+if TYPE_CHECKING:  # avoids importing a sibling module at runtime
+    from .response import Usage
 
 logger = logging.getLogger(__name__)
+
+
+class CostComponents(NamedTuple):
+    """
+    Cost of a request split by what was billed, in USD.
+
+    total_cost_usd is the sum of the three components, so consumers can report a total
+    without knowing which providers bill reasoning separately.
+    """
+
+    input_cost_usd: float
+    output_cost_usd: float
+    reasoning_cost_usd: float
+    total_cost_usd: float
 
 
 class PricingManager:
@@ -150,6 +167,49 @@ class PricingManager:
 
         return (input_cost, output_cost, total_cost)
 
+    def calculate_cost_components(
+        self,
+        provider: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        reasoning_tokens: Optional[int] = 0,
+    ) -> Optional[CostComponents]:
+        """
+        Calculate the estimated cost for a request, including reasoning tokens.
+
+        Reasoning is charged at the output rate. Google prices its thinking tokens in the
+        column labelled "Output price (including thinking tokens)", and solving x-ai's
+        reported cost per model-month gives the same rate for reasoning as for output.
+
+        Args:
+            provider: Provider ID
+            model: Model identifier
+            input_tokens: Number of input tokens
+            output_tokens: Number of output tokens
+            reasoning_tokens: Reasoning tokens billed outside output_tokens
+
+        Returns:
+            CostComponents in USD, or None if pricing is not available
+        """
+        pricing = self.get_model_pricing(provider, model)
+        if pricing is None:
+            return None
+
+        input_price_per_million, output_price_per_million = pricing
+
+        # Prices are per million tokens.
+        input_cost = ((input_tokens or 0) / 1_000_000) * input_price_per_million
+        output_cost = ((output_tokens or 0) / 1_000_000) * output_price_per_million
+        reasoning_cost = ((reasoning_tokens or 0) / 1_000_000) * output_price_per_million
+
+        return CostComponents(
+            input_cost_usd=input_cost,
+            output_cost_usd=output_cost,
+            reasoning_cost_usd=reasoning_cost,
+            total_cost_usd=input_cost + output_cost + reasoning_cost,
+        )
+
     def normalize_provider_id(self, provider: str) -> str:
         """
         Normalize provider ID to match pricing data format.
@@ -222,3 +282,69 @@ def calculate_cost(
     manager = get_pricing_manager()
     normalized_provider = manager.normalize_provider_id(provider)
     return manager.calculate_cost(normalized_provider, model, input_tokens, output_tokens)
+
+
+def calculate_cost_components(
+    provider: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    reasoning_tokens: Optional[int] = 0,
+) -> Optional[CostComponents]:
+    """
+    Calculate the estimated cost of a request using the global PricingManager.
+
+    Args:
+        provider: Provider ID
+        model: Model identifier
+        input_tokens: Number of input tokens
+        output_tokens: Number of output tokens
+        reasoning_tokens: Reasoning tokens billed outside output_tokens
+
+    Returns:
+        CostComponents in USD, or None if pricing is not available
+    """
+    manager = get_pricing_manager()
+    normalized_provider = manager.normalize_provider_id(provider)
+    return manager.calculate_cost_components(
+        normalized_provider, model, input_tokens, output_tokens, reasoning_tokens
+    )
+
+
+def apply_costs(usage: "Usage", provider: str, model: str) -> None:
+    """
+    Fill a Usage object's cost fields from list prices, in place.
+
+    A cost the provider billed directly is left alone. Such a total arrives with no
+    component costs beside it, which is how it is recognised here: OpenRouter routes are
+    unpinned, one model name maps to many backends at different prices, so the provider's
+    own figure is the only accurate one and a list price would replace a fact with an
+    estimate.
+
+    Costs stay None where the model is not in the pricing table, and reasoning cost stays
+    None where the reasoning count itself is unknown.
+
+    Args:
+        usage: Usage to fill; reasoning_tokens must already be set
+        provider: Provider ID, used for the pricing lookup
+        model: Model identifier as requested, not as the response echoed it
+    """
+    if (
+        usage.estimated_cost_usd is not None
+        and usage.input_cost_usd is None
+        and usage.output_cost_usd is None
+    ):
+        return
+
+    costs = calculate_cost_components(
+        provider, model, usage.input_tokens, usage.output_tokens, usage.reasoning_tokens
+    )
+    if costs is None:
+        return
+
+    usage.input_cost_usd = costs.input_cost_usd
+    usage.output_cost_usd = costs.output_cost_usd
+    usage.reasoning_cost_usd = (
+        costs.reasoning_cost_usd if usage.reasoning_tokens is not None else None
+    )
+    usage.estimated_cost_usd = costs.total_cost_usd

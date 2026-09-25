@@ -50,7 +50,7 @@ from .utils import (
     APIError,
 )
 
-__version__ = "0.4.5"
+__version__ = "0.5.0"
 
 __all__ = [
     # Core classes

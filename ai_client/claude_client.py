@@ -15,9 +15,17 @@ from typing import List, Tuple, Any, Optional
 from anthropic import Anthropic
 
 from .base_client import BaseAIClient
-from .response import LLMResponse, Usage
-from .pricing import calculate_cost
-from .utils import extract_json_from_text
+from .response import DiscardedAttempts, LLMResponse, Usage
+from .pricing import apply_costs, calculate_cost_components
+from .reasoning import uncounted_reasoning
+from .utils import (
+    attach_discarded,
+    billed_cost,
+    error_payload,
+    extract_json_from_text,
+    usage_counts,
+    usage_of,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -295,6 +303,13 @@ class ClaudeClient(BaseAIClient):
             # Let Claude decide whether to use tools (don't force it)
             # params["tool_choice"] = {"type": "auto"}  # This is the default
 
+        # A failed attempt is still billed, so its tokens are accumulated here and reported
+        # beside the successful response. Local to this call, never on self: one client
+        # object serves many worker threads, and shared state would attribute one thread's
+        # waste to another's response. Note _do_prompt_with_retry re-enters this method on
+        # failure, so the totals cover the final attempt only.
+        discarded = DiscardedAttempts()
+
         # Handle structured output using tools
         if response_format and hasattr(response_format, "model_json_schema"):
             json_schema = response_format.model_json_schema()
@@ -310,24 +325,86 @@ class ClaudeClient(BaseAIClient):
             params["tools"] = tools
             params["tool_choice"] = {"type": "tool", "name": "extract_structured_data"}
 
+            raw_response = None
             try:
                 raw_response = self.api_client.messages.create(**params)
-                return self._create_response_from_tool(raw_response, model, response_format)
+                return self._create_response_from_tool(
+                    raw_response, model, response_format, discarded
+                )
             except Exception as e:
+                # The call may have succeeded and only the parsing failed, in which case the
+                # usage is on the response rather than the exception. Either way it was
+                # billed, and the retry below is billed again.
+                wasted = self._record_discarded_attempt(
+                    discarded, e, raw_response, self.PROVIDER_ID, model
+                )
                 logger.warning(
                     f"Structured output via tools failed: {e}. Falling back to text mode."
+                    f"{wasted} A second request will be billed."
                 )
                 # Remove tools and try again
                 del params["tools"]
                 del params["tool_choice"]
 
         # Send the request to Anthropic
-        raw_response = self.api_client.messages.create(**params)
+        try:
+            raw_response = self.api_client.messages.create(**params)
+        except Exception as e:
+            raise attach_discarded(e, discarded)
 
-        return self._create_response_from_raw(raw_response, model)
+        return self._create_response_from_raw(raw_response, model, discarded)
+
+    @staticmethod
+    def _record_discarded_attempt(
+        discarded: DiscardedAttempts,
+        error: Exception,
+        raw_response: Any,
+        provider: str,
+        model: str,
+    ) -> str:
+        """
+        Record the tokens a failed structured-output attempt was billed for.
+
+        The tool call may have succeeded with only the parsing failing, so the usage is
+        looked for on the response before the exception.
+
+        Args:
+            discarded: Accumulator for this call
+            error: Exception raised by the failed attempt
+            raw_response: Response from the attempt, if one arrived
+            provider: Provider ID, for the pricing lookup
+            model: Model identifier as requested
+
+        Returns:
+            A phrase naming what was wasted, or an empty string if nothing was billed
+        """
+        payload = raw_response if usage_counts(usage_of(raw_response)) else error_payload(error)
+        counts = usage_counts(usage_of(payload))
+        if counts is None:
+            return ""
+
+        input_tokens, output_tokens, total = counts
+        reasoning = uncounted_reasoning(
+            input_tokens, output_tokens, total, payload, provider=provider, model=model
+        )
+        # A cost the provider billed is the accurate one; list prices are the fallback.
+        cost = billed_cost(usage_of(payload))
+        if cost is None:
+            costs = calculate_cost_components(
+                provider, model, input_tokens, output_tokens, reasoning
+            )
+            cost = costs.total_cost_usd if costs is not None else None
+        discarded.add(input_tokens, output_tokens, cost, reasoning)
+
+        priced = f" (${cost:.6f})" if cost is not None else ""
+        return f" Discarded attempt billed {input_tokens} input + {output_tokens} output{priced}."
 
     def _create_response_from_tool(
-        self, raw_response: Any, model: str, response_format: Any
+        self,
+        raw_response: Any,
+        model: str,
+        response_format: Any,
+        discarded: Optional[DiscardedAttempts] = None,
     ) -> LLMResponse:
         """
         Create LLMResponse from Claude tool-based response (structured output).
@@ -382,15 +459,18 @@ class ClaudeClient(BaseAIClient):
             if isinstance(cache_read_tokens, (int, float)) and cache_read_tokens > 0:
                 logger.info(f"Claude cache read: {cache_read_tokens} tokens")
 
-            # Calculate cost if pricing data is available
-            costs = calculate_cost(
-                self.PROVIDER_ID,
-                model,
+            usage.reasoning_tokens = uncounted_reasoning(
                 usage.input_tokens,
                 usage.output_tokens,
+                usage.total_tokens,
+                raw_response,
+                provider=self.PROVIDER_ID,
+                model=model,
             )
-            if costs is not None:
-                usage.input_cost_usd, usage.output_cost_usd, usage.estimated_cost_usd = costs
+            apply_costs(usage, self.PROVIDER_ID, model)
+
+        if discarded is not None:
+            discarded.apply_to(usage)
 
         return LLMResponse(
             text=text,
@@ -402,7 +482,12 @@ class ClaudeClient(BaseAIClient):
             parsed=parsed_data,
         )
 
-    def _create_response_from_raw(self, raw_response: Any, model: str) -> LLMResponse:
+    def _create_response_from_raw(
+        self,
+        raw_response: Any,
+        model: str,
+        discarded: Optional[DiscardedAttempts] = None,
+    ) -> LLMResponse:
         """
         Create LLMResponse from Claude raw response.
 
@@ -453,15 +538,18 @@ class ClaudeClient(BaseAIClient):
             if isinstance(cache_read_tokens, (int, float)) and cache_read_tokens > 0:
                 logger.info(f"Claude cache read: {cache_read_tokens} tokens")
 
-            # Calculate cost if pricing data is available
-            costs = calculate_cost(
-                self.PROVIDER_ID,
-                model,
+            usage.reasoning_tokens = uncounted_reasoning(
                 usage.input_tokens,
                 usage.output_tokens,
+                usage.total_tokens,
+                raw_response,
+                provider=self.PROVIDER_ID,
+                model=model,
             )
-            if costs is not None:
-                usage.input_cost_usd, usage.output_cost_usd, usage.estimated_cost_usd = costs
+            apply_costs(usage, self.PROVIDER_ID, model)
+
+        if discarded is not None:
+            discarded.apply_to(usage)
 
         return LLMResponse(
             text=text,

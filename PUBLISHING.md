@@ -176,9 +176,16 @@ pytest -m integration
 ```
 
 ### 3. Update version number
-Edit `pyproject.toml`:
+Two files carry the version and **both** must be bumped, or `pip show` and
+`ai_client.__version__` disagree for everyone who installs the release (0.4.6 shipped that
+way):
 ```toml
+# pyproject.toml
 version = "0.1.1"  # Increment appropriately
+```
+```python
+# ai_client/__init__.py
+__version__ = "0.1.1"
 ```
 
 ### 4. Update CHANGELOG (optional but recommended)
@@ -199,17 +206,23 @@ Create/update `CHANGELOG.md` with release notes:
 
 ### 5. Commit changes
 ```bash
-git add pyproject.toml CHANGELOG.md ai_client/pricing.json
+git add pyproject.toml ai_client/__init__.py CHANGELOG.md ai_client/pricing.json
 git commit -m "Bump version to 0.1.1"
 git push
 ```
+Wait for CI to pass on the pushed commit before going on.
 
 ### 6. Create GitHub release
 ```bash
 gh release create v0.1.1 \
   --title "v0.1.1" \
+  --target "$(git rev-parse HEAD)" \
   --notes-file CHANGELOG.md
 ```
+`gh release create` with a tag that does not exist yet creates it **on the remote's default
+branch as the remote currently has it**. Running this with the release commit still local
+would publish the previous version's code under the new name, to PyPI, irreversibly. Either
+push first and pass `--target`, or push the tag yourself beforehand.
 
 ### 7. Monitor the workflow
 Watch: https://github.com/RISE-UNIBAS/generic_llm_api_client/actions

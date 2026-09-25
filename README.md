@@ -358,9 +358,11 @@ client = create_ai_client(
 )
 ```
 
-Cost is **not** populated for HuggingFace responses — `usage.estimated_cost_usd` is `None` (a
-router model can be served by several providers at different prices; see [PRICING.md](PRICING.md)).
-Token counts are still tracked.
+Cost is populated only when the model id **pins a provider** (e.g.
+`swiss-ai/Apertus-v1.5-8B:publicai`). A bare router id routes to whichever partner is
+fastest, and the same model is served by several at different prices, so
+`usage.estimated_cost_usd` stays `None`; see [PRICING.md](PRICING.md). Token counts are
+tracked either way.
 
 **2. Dedicated Inference Endpoints.** For any Hub model the router does not serve, deploy it to
 your own endpoint and pass its URL. Note that the `model` argument is then the *endpoint name*,
@@ -392,6 +394,10 @@ print(response.text)
 print(f"Input tokens: {response.usage.input_tokens}")
 print(f"Output tokens: {response.usage.output_tokens}")
 print(f"Total tokens: {response.usage.total_tokens}")
+
+# Reasoning a provider billed outside output_tokens (None if it reported no total).
+# input + output + reasoning == total wherever a total was reported.
+print(f"Reasoning tokens: {response.usage.reasoning_tokens}")
 
 # Metadata
 print(f"Model: {response.model}")

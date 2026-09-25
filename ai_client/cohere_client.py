@@ -15,7 +15,8 @@ import cohere
 
 from .base_client import BaseAIClient
 from .response import LLMResponse, Usage
-from .pricing import calculate_cost
+from .pricing import apply_costs
+from .reasoning import uncounted_reasoning
 from .utils import extract_json_from_text
 
 logger = logging.getLogger(__name__)
@@ -232,15 +233,15 @@ class CohereClient(BaseAIClient):
                 usage.output_tokens = getattr(usage_info.tokens, "output_tokens", 0)
                 usage.total_tokens = usage.input_tokens + usage.output_tokens
 
-            # Calculate cost if pricing data is available
-            costs = calculate_cost(
-                self.PROVIDER_ID,
-                model,
+            usage.reasoning_tokens = uncounted_reasoning(
                 usage.input_tokens,
                 usage.output_tokens,
+                usage.total_tokens,
+                raw_response,
+                provider=self.PROVIDER_ID,
+                model=model,
             )
-            if costs is not None:
-                usage.input_cost_usd, usage.output_cost_usd, usage.estimated_cost_usd = costs
+            apply_costs(usage, self.PROVIDER_ID, model)
 
         # Extract finish reason
         finish_reason = "stop"
