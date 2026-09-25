@@ -19,9 +19,6 @@ HuggingFace exposes two OpenAI-compatible surfaces, both served by this client:
    billed per hardware-hour rather than per token.
 """
 
-from datetime import datetime, timezone
-from typing import List, Optional, Tuple
-
 from .openai_client import OpenAIClient
 
 
@@ -56,30 +53,3 @@ class HuggingFaceClient(OpenAIClient):
         self.settings["default_headers"] = headers
 
         super()._init_client()
-
-    def get_model_list(self) -> List[Tuple[str, Optional[str]]]:
-        """
-        Get a list of available models.
-
-        Overrides the OpenAI implementation because dedicated Inference Endpoints
-        may omit the `created` timestamp that the base class assumes is present.
-
-        Returns:
-            List of tuples (model_id, created_date), where created_date is None
-            if the endpoint does not report one
-        """
-        if self.api_client is None:
-            raise ValueError("HuggingFace client is not initialized.")
-
-        model_list = []
-
-        for model in self.api_client.models.list():
-            created = getattr(model, "created", None)
-            readable_date = None
-            if isinstance(created, (int, float)):
-                readable_date = datetime.fromtimestamp(created, tz=timezone.utc).strftime(
-                    "%Y-%m-%d"
-                )
-            model_list.append((model.id, readable_date))
-
-        return model_list

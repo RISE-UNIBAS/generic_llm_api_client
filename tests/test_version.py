@@ -29,4 +29,5 @@ class TestVersion:
         """Test the release being published has release notes."""
         changelog = (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
-        assert re.search(rf"^## \[{re.escape(ai_client.__version__)}\]", changelog, re.M)
+        # The heading may carry the tag's "v" prefix or not; both are used in the wild.
+        assert re.search(rf"^## \[v?{re.escape(ai_client.__version__)}\]", changelog, re.M)

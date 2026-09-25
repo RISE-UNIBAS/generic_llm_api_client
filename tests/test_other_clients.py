@@ -381,3 +381,83 @@ class TestCohereClient:
             assert len(models) == 2
             assert models[0] == ("command-r", None)
             assert models[1] == ("command-a-03-2025", None)
+
+
+class TestDeepSeekVisionModels:
+    """Tests for deciding which DeepSeek models accept images."""
+
+    @staticmethod
+    def _client_and_api(openai_class, mock_openai_response, **settings):
+        """Wire a mocked SDK client that returns the given response."""
+        api = Mock()
+        openai_class.return_value = api
+        api.chat.completions.create.return_value = mock_openai_response
+        return create_ai_client("deepseek", api_key="test-key", **settings), api
+
+    def _images_sent(self, api):
+        """How many image parts the request actually carried."""
+        content = api.chat.completions.create.call_args.kwargs["messages"][-1]["content"]
+        if not isinstance(content, list):
+            return 0
+        return sum(1 for part in content if part.get("type") == "image_url")
+
+    def test_vision_model_without_vl_in_its_name_keeps_images(
+        self, mock_openai_response, sample_image_path
+    ):
+        """Test deepseek-flash accepts images despite its name saying nothing about it."""
+        with patch("ai_client.openai_client.OpenAI") as openai_class:
+            client, api = self._client_and_api(openai_class, mock_openai_response)
+            client.prompt("deepseek-flash", "Describe", images=[sample_image_path])
+
+        assert self._images_sent(api) == 1
+
+    def test_text_only_model_still_drops_images(self, mock_openai_response, sample_image_path):
+        """Test a model with no image support has them stripped, as before."""
+        with patch("ai_client.openai_client.OpenAI") as openai_class:
+            client, api = self._client_and_api(openai_class, mock_openai_response)
+            client.prompt("deepseek-chat", "Describe", images=[sample_image_path])
+
+        assert self._images_sent(api) == 0
+
+    def test_named_keywords_still_match(self, mock_openai_response, sample_image_path):
+        """Test the existing vl and vision fragments are unaffected."""
+        with patch("ai_client.openai_client.OpenAI") as openai_class:
+            client, api = self._client_and_api(openai_class, mock_openai_response)
+            client.prompt("deepseek-v4-flash-vision-exp", "Describe", images=[sample_image_path])
+
+        assert self._images_sent(api) == 1
+
+    def test_setting_extends_the_list_without_a_release(
+        self, mock_openai_response, sample_image_path
+    ):
+        """Test a caller can name a new vision model instead of waiting for a release."""
+        with patch("ai_client.openai_client.OpenAI") as openai_class:
+            client, api = self._client_and_api(
+                openai_class, mock_openai_response, vision_model_keywords=("deepseek-v9",)
+            )
+            client.prompt("deepseek-v9-preview", "Describe", images=[sample_image_path])
+
+        assert self._images_sent(api) == 1
+
+
+class TestModelListWithoutTimestamps:
+    """Tests for listing models from endpoints that report no creation date."""
+
+    def test_missing_created_does_not_fail_the_listing(self):
+        """Test a provider omitting `created` still returns its catalogue.
+
+        DeepSeek reports None, which previously raised TypeError and lost every model.
+        """
+        with patch("ai_client.openai_client.OpenAI") as openai_class:
+            api = Mock()
+            openai_class.return_value = api
+            dated, undated = Mock(), Mock()
+            dated.id, dated.created = "deepseek-chat", 1678896000
+            undated.id, undated.created = "deepseek-flash", None
+            api.models.list.return_value = [dated, undated]
+
+            client = create_ai_client("deepseek", api_key="test-key")
+            models = client.get_model_list()
+
+        assert models[0] == ("deepseek-chat", "2023-03-15")
+        assert models[1] == ("deepseek-flash", None)

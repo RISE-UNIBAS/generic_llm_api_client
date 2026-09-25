@@ -25,15 +25,18 @@ from .utils import (
     billed_cost,
     error_payload,
     extract_json_from_text,
+    rejects_parameter,
     usage_counts,
     usage_of,
 )
 
 logger = logging.getLogger(__name__)
 
-# Model families whose chat endpoint rejects max_tokens and requires
-# max_completion_tokens instead. Matched as a prefix on the bare model id.
-MAX_COMPLETION_TOKENS_MODELS = ("gpt-5", "gpt-6", "o1", "o3", "o4")
+# Reasoning model families, matched as a prefix on the bare model id. Their chat endpoint
+# requires max_completion_tokens in place of max_tokens, and accepts only the default
+# temperature. Both are corrected before the call; _call_with_parameter_retry covers
+# families released after this version.
+REASONING_MODEL_PREFIXES = ("gpt-5", "gpt-6", "o1", "o3", "o4")
 
 
 class OpenAIClient(BaseAIClient):
@@ -268,6 +271,8 @@ class OpenAIClient(BaseAIClient):
         # covers the ones released after this version.
         if self._uses_max_completion_tokens(model):
             self._rename_token_cap(params)
+        if self._rejects_custom_temperature(model):
+            params.pop("temperature", None)
 
         # Handle tool calling
         tool_definitions = kwargs.pop("_tool_definitions", None)
@@ -303,7 +308,7 @@ class OpenAIClient(BaseAIClient):
                 # Use beta.chat.completions.parse for Pydantic v2 structured output
                 try:
                     params["response_format"] = response_format
-                    raw_response = self._call_with_token_cap_retry(
+                    raw_response = self._call_with_parameter_retry(
                         self.api_client.beta.chat.completions.parse, params, model
                     )
                     return self._create_response_from_parsed(raw_response, model, discarded)
@@ -359,7 +364,7 @@ class OpenAIClient(BaseAIClient):
 
         # Send the request to OpenAI
         try:
-            raw_response = self._call_with_token_cap_retry(
+            raw_response = self._call_with_parameter_retry(
                 self.api_client.chat.completions.create, params, model
             )
         except Exception as e:
@@ -524,7 +529,12 @@ class OpenAIClient(BaseAIClient):
         does not.
         """
         bare = model.split("/")[-1].split(":")[0].lower()
-        return bare.startswith(MAX_COMPLETION_TOKENS_MODELS)
+        return bare.startswith(REASONING_MODEL_PREFIXES)
+
+    @classmethod
+    def _rejects_custom_temperature(cls, model: str) -> bool:
+        """Return True if the model accepts only its default temperature."""
+        return cls._uses_max_completion_tokens(model)
 
     @staticmethod
     def _rename_token_cap(params: dict) -> bool:
@@ -540,31 +550,45 @@ class OpenAIClient(BaseAIClient):
         message = str(error).lower()
         return "max_tokens" in message and "max_completion_tokens" in message
 
-    def _call_with_token_cap_retry(self, send, params: dict, model: str):
+    def _call_with_parameter_retry(self, send, params: dict, model: str):
         """
-        Call a chat endpoint, retrying once if it rejects max_tokens.
+        Call a chat endpoint, correcting parameters the model refuses.
 
-        The rejection is a 400 raised before anything is generated, so the discarded
-        attempt is not billed and must not be counted as one.
+        Newer models rename the token cap and accept only their default temperature.
+        Known families are corrected before the call; this recovers for the rest, so a
+        model released after this version still works. Each rejection is a 400 raised
+        before anything is generated, so nothing is billed and no attempt is recorded.
 
         Args:
             send: Bound SDK method taking the request parameters
-            params: Request parameters, renamed in place if the retry fires
+            params: Request parameters, corrected in place when a retry fires
             model: Model identifier, for the log line
 
         Returns:
             The provider's response
         """
-        try:
-            return send(**params)
-        except Exception as error:
-            if not self._is_token_cap_error(error) or not self._rename_token_cap(params):
+        # One attempt, plus one for each correction this method knows how to make.
+        for _ in range(3):
+            try:
+                return send(**params)
+            except Exception as error:
+                if self._is_token_cap_error(error) and self._rename_token_cap(params):
+                    logger.warning(
+                        f"Model {model} rejected max_tokens; retrying with "
+                        f"max_completion_tokens. Add its prefix to "
+                        f"REASONING_MODEL_PREFIXES to skip this round trip."
+                    )
+                    continue
+                if rejects_parameter(error, "temperature") and "temperature" in params:
+                    del params["temperature"]
+                    logger.warning(
+                        f"Model {model} rejected a custom temperature; retrying without "
+                        f"one. Add its prefix to REASONING_MODEL_PREFIXES to skip this "
+                        f"round trip."
+                    )
+                    continue
                 raise
-            logger.warning(
-                f"Model {model} rejected max_tokens; retrying with max_completion_tokens. "
-                f"Add its prefix to MAX_COMPLETION_TOKENS_MODELS to skip this round trip."
-            )
-            return send(**params)
+        return send(**params)
 
     @staticmethod
     def _record_discarded_attempt(
@@ -926,18 +950,22 @@ class OpenAIClient(BaseAIClient):
         Get a list of available models from OpenAI.
 
         Returns:
-            List of tuples (model_id, created_date)
+            List of tuples (model_id, created_date), where created_date is None if the
+            endpoint does not report one. DeepSeek and dedicated HuggingFace endpoints
+            both omit it, and reading it blindly fails the whole listing.
         """
         if self.api_client is None:
             raise ValueError("OpenAI client is not initialized.")
 
-        raw_list = self.api_client.models.list()
         model_list = []
 
-        for model in raw_list:
-            readable_date = datetime.fromtimestamp(model.created, tz=timezone.utc).strftime(
-                "%Y-%m-%d"
-            )
+        for model in self.api_client.models.list():
+            created = getattr(model, "created", None)
+            readable_date = None
+            if isinstance(created, (int, float)):
+                readable_date = datetime.fromtimestamp(created, tz=timezone.utc).strftime(
+                    "%Y-%m-%d"
+                )
             model_list.append((model.id, readable_date))
 
         return model_list

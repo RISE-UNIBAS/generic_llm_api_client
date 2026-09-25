@@ -13,8 +13,10 @@ from .response import LLMResponse
 
 logger = logging.getLogger(__name__)
 
-# DeepSeek model name fragments that indicate vision/multimodal support
-_VISION_MODEL_KEYWORDS = ("vl", "vision")
+# DeepSeek model name fragments that indicate vision/multimodal support. Not every vision
+# model says so in its name -- "deepseek-flash" accepts images -- so pass extra fragments
+# as the "vision_model_keywords" setting rather than waiting for a release.
+_VISION_MODEL_KEYWORDS = ("vl", "vision", "deepseek-flash")
 
 
 class DeepSeekClient(OpenAIClient):
@@ -37,6 +39,20 @@ class DeepSeekClient(OpenAIClient):
         # Call parent initialization
         super()._init_client()
 
+    def _supports_images(self, model: str) -> bool:
+        """
+        Report whether a DeepSeek model accepts image inputs.
+
+        Args:
+            model: Model identifier as requested
+
+        Returns:
+            True if the model name matches a known vision fragment
+        """
+        extra = self.settings.get("vision_model_keywords") or ()
+        keywords = tuple(extra) + tuple(_VISION_MODEL_KEYWORDS)
+        return any(keyword in model.lower() for keyword in keywords)
+
     def _do_prompt(
         self,
         model: str,
@@ -49,11 +65,12 @@ class DeepSeekClient(OpenAIClient):
         file_content: str = "",
         **kwargs,
     ) -> LLMResponse:
-        """Strip images for non-VL DeepSeek models before delegating to OpenAIClient."""
-        if images and not any(kw in model.lower() for kw in _VISION_MODEL_KEYWORDS):
+        """Strip images for DeepSeek models that cannot accept them, then delegate."""
+        if images and not self._supports_images(model):
             logger.warning(
-                f"DeepSeek model '{model}' does not support image inputs "
-                f"(only VL models do). Images will be ignored."
+                f"DeepSeek model '{model}' is not known to support image inputs. Images "
+                f"will be ignored; add a matching fragment to the "
+                f"'vision_model_keywords' setting if it does."
             )
             images = []
 

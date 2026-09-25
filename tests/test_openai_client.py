@@ -265,3 +265,89 @@ class TestTokenCapParameter:
 
         assert response.finish_reason == "error"
         assert "max_completion_tokens" not in api.chat.completions.create.call_args.kwargs
+
+
+class TestTemperatureParameter:
+    """Tests for omitting a temperature the model will not accept."""
+
+    @staticmethod
+    def _client_and_api(openai_class, mock_openai_response):
+        """Wire a mocked SDK client that returns the given response."""
+        api = Mock()
+        openai_class.return_value = api
+        api.chat.completions.create.return_value = mock_openai_response
+        return create_ai_client("openai", api_key="test-key"), api
+
+    def test_reasoning_model_sends_no_temperature(self, mock_openai_response):
+        """Test a model that accepts only its default temperature is sent none."""
+        with patch("ai_client.openai_client.OpenAI") as openai_class:
+            client, api = self._client_and_api(openai_class, mock_openai_response)
+            client.prompt("gpt-5-nano", "Hello", temperature=0.2)
+
+        assert "temperature" not in api.chat.completions.create.call_args.kwargs
+
+    def test_ordinary_model_still_sends_temperature(self, mock_openai_response):
+        """Test the temperature of a model that accepts one is left alone."""
+        with patch("ai_client.openai_client.OpenAI") as openai_class:
+            client, api = self._client_and_api(openai_class, mock_openai_response)
+            client.prompt("gpt-4o-mini", "Hello", temperature=0.2)
+
+        assert api.chat.completions.create.call_args.kwargs["temperature"] == 0.2
+
+    def test_unlisted_model_recovers_from_the_rejection(self, mock_openai_response):
+        """Test a model not in the list drops the temperature by itself."""
+        rejection = Exception(
+            "Error code: 400 - Unsupported value: 'temperature' does not support 0.2 with "
+            "this model. Only the default (1) value is supported."
+        )
+        with patch("ai_client.openai_client.OpenAI") as openai_class:
+            api = Mock()
+            openai_class.return_value = api
+            api.chat.completions.create.side_effect = [rejection, mock_openai_response]
+
+            client = create_ai_client("openai", api_key="test-key")
+            response = client.prompt("brand-new-model", "Hello", temperature=0.2)
+
+        assert response.finish_reason == "stop"
+        assert "temperature" not in api.chat.completions.create.call_args.kwargs
+
+    def test_both_rejected_parameters_are_corrected(self, mock_openai_response):
+        """Test a model refusing the token cap and the temperature recovers from both."""
+        cap_rejection = Exception(
+            "Unsupported parameter: 'max_tokens' is not supported with this model. "
+            "Use 'max_completion_tokens' instead."
+        )
+        temperature_rejection = Exception(
+            "Unsupported value: 'temperature' does not support 0.2 with this model."
+        )
+        with patch("ai_client.openai_client.OpenAI") as openai_class:
+            api = Mock()
+            openai_class.return_value = api
+            api.chat.completions.create.side_effect = [
+                cap_rejection,
+                temperature_rejection,
+                mock_openai_response,
+            ]
+
+            client = create_ai_client("openai", api_key="test-key")
+            response = client.prompt("brand-new-model", "Hello", temperature=0.2, max_tokens=100)
+
+        sent = api.chat.completions.create.call_args.kwargs
+        assert response.finish_reason == "stop"
+        assert sent["max_completion_tokens"] == 100
+        assert "temperature" not in sent
+        assert "max_tokens" not in sent
+
+    def test_rejection_is_not_counted_as_a_billed_attempt(self, mock_openai_response):
+        """Test a 400 generated nothing, so it is not recorded as an attempt."""
+        rejection = Exception("Unsupported value: 'temperature' is not supported")
+        with patch("ai_client.openai_client.OpenAI") as openai_class:
+            api = Mock()
+            openai_class.return_value = api
+            api.chat.completions.create.side_effect = [rejection, mock_openai_response]
+
+            client = create_ai_client("openai", api_key="test-key")
+            usage = client.prompt("brand-new-model", "Hello", temperature=0.2).usage
+
+        assert usage.attempts == 1
+        assert usage.discarded_input_tokens == 0

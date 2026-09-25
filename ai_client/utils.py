@@ -163,6 +163,31 @@ def usage_counts(source) -> Optional[tuple]:
     return (input_tokens, output_tokens, input_tokens + output_tokens if total is None else total)
 
 
+def rejects_parameter(exception: Exception, parameter: str) -> bool:
+    """
+    Return True when a provider refused a named request parameter.
+
+    Providers word the refusal differently -- OpenAI with "Unsupported value: 'temperature'
+    does not support 0.2 with this model", Anthropic with "`temperature` is deprecated for
+    this model" -- so match the parameter name against any of the ways they say no.
+
+    Args:
+        exception: Exception raised by a provider call
+        parameter: Request parameter to look for
+
+    Returns:
+        True if the provider rejected that parameter
+    """
+    message = str(exception).lower()
+    if parameter.lower() not in message:
+        return False
+
+    return any(
+        phrase in message
+        for phrase in ("unsupported", "not supported", "does not support", "deprecated")
+    )
+
+
 def billed_cost(source) -> Optional[float]:
     """
     Return a cost the provider reported charging, if it gave a usable number.

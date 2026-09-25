@@ -31,9 +31,12 @@ can be the majority of a response, so cost was understated several-fold.
   rate, plus `pricing.apply_costs`, which fills a `Usage` in place.
 - `utils.usage_counts` and `utils.usage_from_error`, recovering token counts from a provider
   usage object or from a failed request's exception.
-- `max_completion_tokens` support. gpt-5 and newer reject `max_tokens` on the chat endpoint;
-  known model families are renamed before the call, and anything else recovers by retrying
-  once when the provider rejects the parameter.
+- Request parameters are adapted to what a model accepts, so a caller can pass the same
+  settings to every model. gpt-5 and newer need `max_completion_tokens` in place of
+  `max_tokens` and take only their default temperature; newer Claude models have retired
+  `temperature` altogether and reject it outright. Known model families are corrected
+  before the call, and anything else recovers by retrying once when the provider refuses
+  a parameter, so a model released after this version still works.
 
 ### Changed
 
@@ -69,6 +72,12 @@ can be the majority of a response, so cost was understated several-fold.
   along with it.
 - The OpenRouter billed-cost branch was selected with `hasattr`, so a `cost` of `None`
   counted as a billed total and every mocked usage object took the branch.
+- DeepSeek images are no longer dropped for `deepseek-flash`, which accepts them despite
+  its name matching no known vision fragment. The fragment list can be extended per
+  client with the `vision_model_keywords` setting, so a new vision model no longer needs
+  a release.
+- Listing models no longer fails for providers that report no creation timestamp.
+  DeepSeek returns None, which raised TypeError and lost the entire catalogue.
 - `pyproject.toml` and `ai_client/__init__.py` no longer disagree. 0.4.6 shipped reporting
   `0.4.5` from `ai_client.__version__`.
 

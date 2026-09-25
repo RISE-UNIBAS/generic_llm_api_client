@@ -136,3 +136,48 @@ class TestClaudeClient:
             client.prompt("claude-3-5-sonnet-20241022", "test")
             call_args = mock_client.messages.create.call_args
             assert call_args.kwargs["max_tokens"] == 8192
+
+
+class TestTemperatureParameter:
+    """Tests for omitting a temperature the model has retired."""
+
+    def test_retired_model_sends_no_temperature(self, mock_claude_response):
+        """Test a model that rejects temperature outright is sent none."""
+        with patch("ai_client.claude_client.Anthropic") as anthropic_class:
+            api = Mock()
+            anthropic_class.return_value = api
+            api.messages.create.return_value = mock_claude_response
+
+            client = create_ai_client("anthropic", api_key="test-key")
+            client.prompt("claude-sonnet-5", "Hello", temperature=0.5)
+
+        assert "temperature" not in api.messages.create.call_args.kwargs
+
+    def test_ordinary_model_still_sends_temperature(self, mock_claude_response):
+        """Test a model that accepts a temperature keeps it."""
+        with patch("ai_client.claude_client.Anthropic") as anthropic_class:
+            api = Mock()
+            anthropic_class.return_value = api
+            api.messages.create.return_value = mock_claude_response
+
+            client = create_ai_client("anthropic", api_key="test-key")
+            client.prompt("claude-3-5-sonnet-20241022", "Hello", temperature=0.5)
+
+        assert api.messages.create.call_args.kwargs["temperature"] == 0.5
+
+    def test_unlisted_model_recovers_from_the_rejection(self, mock_claude_response):
+        """Test a model not in the list drops the temperature by itself."""
+        rejection = Exception(
+            "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', "
+            "'message': '`temperature` is deprecated for this model.'}}"
+        )
+        with patch("ai_client.claude_client.Anthropic") as anthropic_class:
+            api = Mock()
+            anthropic_class.return_value = api
+            api.messages.create.side_effect = [rejection, mock_claude_response]
+
+            client = create_ai_client("anthropic", api_key="test-key")
+            response = client.prompt("claude-brand-new", "Hello", temperature=0.5)
+
+        assert response.finish_reason != "error"
+        assert "temperature" not in api.messages.create.call_args.kwargs

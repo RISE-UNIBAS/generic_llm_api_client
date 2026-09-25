@@ -23,11 +23,23 @@ from .utils import (
     billed_cost,
     error_payload,
     extract_json_from_text,
+    rejects_parameter,
     usage_counts,
     usage_of,
 )
 
 logger = logging.getLogger(__name__)
+
+# Model families that have retired the temperature parameter and reject it outright,
+# matched as a prefix. Anthropic reports it as deprecated rather than unsupported, so
+# _send corrects for families released after this version too.
+TEMPERATURE_FREE_MODEL_PREFIXES = (
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-fable-5",
+)
 
 
 class ClaudeClient(BaseAIClient):
@@ -288,6 +300,9 @@ class ClaudeClient(BaseAIClient):
             if value is not None:
                 params[param] = value
 
+        if self._rejects_temperature(model):
+            params.pop("temperature", None)
+
         # Handle tool calling
         tool_definitions = kwargs.pop("_tool_definitions", None)
         if tool_definitions:
@@ -327,7 +342,7 @@ class ClaudeClient(BaseAIClient):
 
             raw_response = None
             try:
-                raw_response = self.api_client.messages.create(**params)
+                raw_response = self._send(params, model)
                 return self._create_response_from_tool(
                     raw_response, model, response_format, discarded
                 )
@@ -348,11 +363,44 @@ class ClaudeClient(BaseAIClient):
 
         # Send the request to Anthropic
         try:
-            raw_response = self.api_client.messages.create(**params)
+            raw_response = self._send(params, model)
         except Exception as e:
             raise attach_discarded(e, discarded)
 
         return self._create_response_from_raw(raw_response, model, discarded)
+
+    @staticmethod
+    def _rejects_temperature(model: str) -> bool:
+        """Return True if the model has retired the temperature parameter."""
+        return model.split("/")[-1].lower().startswith(TEMPERATURE_FREE_MODEL_PREFIXES)
+
+    def _send(self, params: dict, model: str):
+        """
+        Send a request, dropping a parameter the model refuses and retrying once.
+
+        Anthropic has retired temperature on its newer models, and the rejection is a
+        400 raised before anything is generated, so nothing is billed. Known families
+        are corrected before the call; this recovers for the rest.
+
+        Args:
+            params: Request parameters, corrected in place when the retry fires
+            model: Model identifier, for the log line
+
+        Returns:
+            The provider's response
+        """
+        try:
+            return self.api_client.messages.create(**params)
+        except Exception as error:
+            if not rejects_parameter(error, "temperature") or "temperature" not in params:
+                raise
+            del params["temperature"]
+            logger.warning(
+                f"Model {model} has retired the temperature parameter; retrying without "
+                f"it. Add its prefix to TEMPERATURE_FREE_MODEL_PREFIXES to skip this "
+                f"round trip."
+            )
+            return self.api_client.messages.create(**params)
 
     @staticmethod
     def _record_discarded_attempt(
