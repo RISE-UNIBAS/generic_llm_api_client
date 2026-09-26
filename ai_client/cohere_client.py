@@ -14,7 +14,7 @@ from typing import List, Tuple, Any, Optional
 import cohere
 
 from .base_client import BaseAIClient
-from .response import LLMResponse, Usage
+from .response import LLMResponse, Usage, token_count
 from .pricing import apply_costs
 from .reasoning import uncounted_reasoning
 from .utils import extract_json_from_text
@@ -179,7 +179,9 @@ class CohereClient(BaseAIClient):
         # Send the request
         raw_response = self.api_client.chat(**params)
 
-        return self._create_response_from_raw(raw_response, model, response_format)
+        return self._build_response(
+            self._create_response_from_raw, raw_response, model, response_format
+        )
 
     def _create_response_from_raw(
         self, raw_response: Any, model: str, response_format: Optional[Any]
@@ -229,8 +231,10 @@ class CohereClient(BaseAIClient):
 
             # Cohere provides tokens and billed_units
             if hasattr(usage_info, "tokens"):
-                usage.input_tokens = getattr(usage_info.tokens, "input_tokens", 0)
-                usage.output_tokens = getattr(usage_info.tokens, "output_tokens", 0)
+                # Cohere reports whole numbers as floats; normalise so stored records
+                # match every other provider's.
+                usage.input_tokens = token_count(getattr(usage_info.tokens, "input_tokens", 0))
+                usage.output_tokens = token_count(getattr(usage_info.tokens, "output_tokens", 0))
                 usage.total_tokens = usage.input_tokens + usage.output_tokens
 
             usage.reasoning_tokens = uncounted_reasoning(

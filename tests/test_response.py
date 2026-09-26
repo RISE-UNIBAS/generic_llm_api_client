@@ -284,3 +284,21 @@ class TestLLMResponse:
         )
 
         assert response.timestamp == custom_time
+
+
+class TestTokenCount:
+    """Tests for normalising a provider's reported count."""
+
+    def test_whole_float_becomes_an_int(self):
+        """Test Cohere's floats are stored as integers, like every other provider's."""
+        usage = Usage(input_tokens=187.0, output_tokens=68.0, total_tokens=255.0)
+
+        assert usage.to_dict() == {
+            "input_tokens": 187,
+            "output_tokens": 68,
+            "total_tokens": 255,
+        }
+
+    def test_omitted_count_becomes_zero(self):
+        """Test a missing count is still zero rather than None."""
+        assert Usage(input_tokens=None).input_tokens == 0

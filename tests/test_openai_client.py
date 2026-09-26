@@ -89,7 +89,7 @@ class TestOpenAIClient:
             call_args = mock_client.chat.completions.create.call_args
             assert call_args.kwargs["temperature"] == 0.9
 
-    def test_prompt_with_structured_output(self, mock_pydantic_model):
+    def test_prompt_with_structured_output(self, mock_pydantic_model, wire_structured_output):
         """Test prompt with structured output (Pydantic model)."""
         with patch("ai_client.openai_client.OpenAI") as mock_openai_class:
             mock_client = Mock()
@@ -110,13 +110,14 @@ class TestOpenAIClient:
             mock_response.usage.prompt_tokens_details = Mock()
             mock_response.usage.prompt_tokens_details.cached_tokens = 0
 
-            mock_client.beta.chat.completions.parse.return_value = mock_response
+            wire_structured_output(mock_client, mock_response)
 
             client = create_ai_client("openai", api_key="test-key")
             response = client.prompt("gpt-4", "Extract data", response_format=mock_pydantic_model)
 
-            # Check that structured output was used
-            mock_client.beta.chat.completions.parse.assert_called_once()
+            # Structured output goes through the raw-response surface, so the body is on
+            # hand if the SDK's validation fails after the request was already billed.
+            mock_client.beta.chat.completions.with_raw_response.parse.assert_called_once()
 
             # Check response contains JSON
             assert isinstance(response, LLMResponse)
@@ -351,3 +352,41 @@ class TestTemperatureParameter:
 
         assert usage.attempts == 1
         assert usage.discarded_input_tokens == 0
+
+
+class TestTemperatureFamilyBoundary:
+    """Tests that only the models which refuse a temperature lose theirs."""
+
+    def test_gpt_5_point_one_keeps_its_temperature(self, mock_openai_response):
+        """Test a model that honours a temperature is not silently resampled.
+
+        gpt-5.1 and newer accept a custom temperature even though gpt-5 does not, so the
+        rule cannot be a plain prefix over the whole series.
+        """
+        with patch("ai_client.openai_client.OpenAI") as openai_class:
+            api = Mock()
+            openai_class.return_value = api
+            api.chat.completions.create.return_value = mock_openai_response
+
+            client = create_ai_client("openai", api_key="test-key")
+            client.prompt("gpt-5.1", "Hello", temperature=0.2, max_tokens=100)
+
+        sent = api.chat.completions.create.call_args.kwargs
+        assert sent["temperature"] == 0.2
+        # The token cap rule is broader and still applies to the whole series.
+        assert sent["max_completion_tokens"] == 100
+
+    def test_dated_gpt_5_point_one_keeps_its_temperature(self):
+        """Test a dated build of an accepting model is classified with its family."""
+        assert OpenAIClient._rejects_custom_temperature("gpt-5.1-2025-11-13") is False
+        assert OpenAIClient._uses_max_completion_tokens("gpt-5.1-2025-11-13") is True
+
+    def test_base_and_sized_models_still_lose_theirs(self):
+        """Test the models that genuinely refuse a temperature are still covered."""
+        for model in ("gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5-2025-08-07", "o3-mini"):
+            assert OpenAIClient._rejects_custom_temperature(model) is True
+
+    def test_unrelated_models_are_untouched(self):
+        """Test the family match does not reach models outside it."""
+        for model in ("gpt-4o", "gpt-4.1", "qwen-o1-preview"):
+            assert OpenAIClient._rejects_custom_temperature(model) is False

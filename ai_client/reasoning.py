@@ -73,6 +73,28 @@ def reported_reasoning(raw_response: Any) -> Optional[int]:
     return None
 
 
+def derived_output(
+    input_tokens: Optional[int], total_tokens: Optional[int], raw_response: Any = None
+) -> int:
+    """
+    Recover a completion count the provider omitted, from the total it did report.
+
+    genai leaves candidates_token_count unset on a thinking response that stopped early,
+    while still reporting a total. Deriving the count keeps input + output + reasoning
+    equal to that total, instead of charging the whole remainder as reasoning.
+
+    Args:
+        input_tokens: Prompt tokens, or None if the provider omitted them
+        total_tokens: Provider-reported total
+        raw_response: Provider response, consulted for its own reasoning count
+
+    Returns:
+        The recovered completion count, never negative
+    """
+    reported = reported_reasoning(raw_response) or 0
+    return max(0, (total_tokens or 0) - (input_tokens or 0) - reported)
+
+
 def gap_of(
     input_tokens: Optional[int], output_tokens: Optional[int], total_tokens: Optional[int]
 ) -> Optional[int]:

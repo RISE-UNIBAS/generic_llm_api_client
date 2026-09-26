@@ -18,7 +18,7 @@ import requests
 from .base_client import BaseAIClient
 from .response import LLMResponse, Usage
 from .pricing import apply_costs
-from .reasoning import reported_reasoning, uncounted_reasoning
+from .reasoning import derived_output, uncounted_reasoning
 from .utils import extract_json_from_text
 
 logger = logging.getLogger(__name__)
@@ -210,7 +210,9 @@ class GeminiClient(BaseAIClient):
             else:
                 raise
 
-        return self._create_response_from_raw(raw_response, model, response_format)
+        return self._build_response(
+            self._create_response_from_raw, raw_response, model, response_format
+        )
 
     def _create_response_from_raw(
         self, raw_response: Any, model: str, response_format: Optional[Any]
@@ -260,8 +262,9 @@ class GeminiClient(BaseAIClient):
             # count from the total so the three still add up, rather than charging the whole
             # remainder as reasoning.
             if metadata.candidates_token_count is None and usage.total_tokens:
-                reported = reported_reasoning(raw_response) or 0
-                usage.output_tokens = max(0, usage.total_tokens - usage.input_tokens - reported)
+                usage.output_tokens = derived_output(
+                    usage.input_tokens, usage.total_tokens, raw_response
+                )
 
             usage.reasoning_tokens = uncounted_reasoning(
                 usage.input_tokens,

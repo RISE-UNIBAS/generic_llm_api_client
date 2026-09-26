@@ -343,8 +343,12 @@ class ClaudeClient(BaseAIClient):
             raw_response = None
             try:
                 raw_response = self._send(params, model)
-                return self._create_response_from_tool(
-                    raw_response, model, response_format, discarded
+                return self._build_response(
+                    self._create_response_from_tool,
+                    raw_response,
+                    model,
+                    response_format,
+                    discarded=discarded,
                 )
             except Exception as e:
                 # The call may have succeeded and only the parsing failed, in which case the
@@ -367,7 +371,9 @@ class ClaudeClient(BaseAIClient):
         except Exception as e:
             raise attach_discarded(e, discarded)
 
-        return self._create_response_from_raw(raw_response, model, discarded)
+        return self._build_response(
+            self._create_response_from_raw, raw_response, model, discarded=discarded
+        )
 
     @staticmethod
     def _rejects_temperature(model: str) -> bool:

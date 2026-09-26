@@ -11,6 +11,7 @@ from ai_client.utils import (
     attach_discarded,
     billed_cost,
     error_payload,
+    output_reported,
     usage_of,
     discarded_from_error,
     usage_counts,
@@ -365,3 +366,34 @@ class TestErrorPayload:
     def test_returns_none_when_nothing_was_billed(self):
         """Test a failure before generation carries no payload."""
         assert error_payload(Exception("connection reset")) is None
+
+
+class TestNestedUsageCounts:
+    """Tests for providers that report their counts below the usage block."""
+
+    def test_cohere_nested_tokens_are_read(self):
+        """Test Cohere's usage.tokens shape resolves to counts."""
+        source = SimpleNamespace(tokens=SimpleNamespace(input_tokens=100.0, output_tokens=200.0))
+
+        assert usage_counts(source) == (100, 200, 300)
+
+    def test_billed_units_are_read(self):
+        """Test the billed_units variant resolves as well."""
+        source = {"billed_units": {"input_tokens": 100, "output_tokens": 200}}
+
+        assert usage_counts(source) == (100, 200, 300)
+
+    def test_gemini_metadata_is_read(self):
+        """Test genai's usage_metadata naming resolves through usage_of."""
+        payload = SimpleNamespace(
+            usage_metadata=SimpleNamespace(
+                prompt_token_count=100, candidates_token_count=200, total_token_count=500
+            )
+        )
+
+        assert usage_counts(usage_of(payload)) == (100, 200, 500)
+
+    def test_output_reported_distinguishes_omitted_from_zero(self):
+        """Test an omitted completion count is not read as a reported zero."""
+        assert output_reported({"prompt_tokens": 10, "completion_tokens": 0}) is True
+        assert output_reported({"prompt_tokens": 10}) is False

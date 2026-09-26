@@ -13,14 +13,17 @@ import asyncio
 from typing import List, Tuple, Any, Optional, Union
 from .response import DiscardedAttempts, LLMResponse, Usage
 from .pricing import apply_costs
-from .reasoning import uncounted_reasoning
+from .reasoning import derived_output, uncounted_reasoning
 from .utils import (
+    attach_discarded,
+    attach_payload,
     retry_with_exponential_backoff,
     read_text_files,
     resize_image_if_needed,
     billed_cost,
     discarded_from_error,
     error_payload,
+    output_reported,
     usage_counts,
     usage_of,
 )
@@ -529,6 +532,34 @@ class BaseAIClient(abc.ABC):
             ),
         )
 
+    def _build_response(self, builder, raw_response, *args, discarded=None) -> LLMResponse:
+        """
+        Run a response builder, keeping everything billed if conversion fails.
+
+        The request has been paid for by the time its response is converted, so a
+        malformed tool argument or a failed validation must not turn it into an empty
+        error response. Attempts an earlier fallback threw away are carried too, since
+        this response may be the last of several a single request billed.
+
+        Args:
+            builder: Bound builder method of the calling client
+            raw_response: The provider's response
+            *args: Remaining builder arguments, before the accumulator
+            discarded: Attempts billed earlier in this request, if the client tracks them
+
+        Returns:
+            The built LLMResponse
+        """
+        try:
+            if discarded is None:
+                return builder(raw_response, *args)
+            return builder(raw_response, *args, discarded)
+        except Exception as error:
+            attach_payload(error, raw_response)
+            if discarded is not None:
+                attach_discarded(error, discarded)
+            raise
+
     def _create_error_response(
         self,
         model: str,
@@ -556,9 +587,18 @@ class BaseAIClient(abc.ABC):
         usage = Usage()
 
         payload = error_payload(error) if isinstance(error, BaseException) else None
-        counts = usage_counts(usage_of(payload))
+        usage_source = usage_of(payload)
+        counts = usage_counts(usage_source)
         if counts is not None:
             usage.input_tokens, usage.output_tokens, usage.total_tokens = counts
+
+            # A provider may report a total but no completion count; recovering it keeps
+            # the three adding up instead of charging the remainder as reasoning.
+            if not output_reported(usage_source) and usage.total_tokens:
+                usage.output_tokens = derived_output(
+                    usage.input_tokens, usage.total_tokens, payload
+                )
+
             usage.reasoning_tokens = uncounted_reasoning(
                 usage.input_tokens,
                 usage.output_tokens,

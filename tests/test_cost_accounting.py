@@ -271,11 +271,11 @@ class TestDiscardedAttempts:
     """Tests that tokens billed on a discarded attempt are salvaged, not lost."""
 
     def test_discarded_tokens_are_recorded(
-        self, openai_client, mock_openai_response, mock_pydantic_model
+        self, openai_client, mock_openai_response, mock_pydantic_model, wire_structured_output
     ):
         """Test a failed structured-output attempt reports what it was billed."""
         client, api = openai_client
-        api.beta.chat.completions.parse.side_effect = _failed_attempt(50, 60)
+        wire_structured_output(api, _failed_attempt(50, 60))
         api.chat.completions.create.return_value = mock_openai_response
 
         usage = client.prompt("gpt-4", "Hi", response_format=mock_pydantic_model).usage
@@ -285,11 +285,11 @@ class TestDiscardedAttempts:
         assert usage.attempts == 2
 
     def test_successful_counts_are_not_inflated(
-        self, openai_client, mock_openai_response, mock_pydantic_model
+        self, openai_client, mock_openai_response, mock_pydantic_model, wire_structured_output
     ):
         """Test the response still reports only what the successful call used."""
         client, api = openai_client
-        api.beta.chat.completions.parse.side_effect = _failed_attempt(50, 60)
+        wire_structured_output(api, _failed_attempt(50, 60))
         api.chat.completions.create.return_value = mock_openai_response
 
         usage = client.prompt("gpt-4", "Hi", response_format=mock_pydantic_model).usage
@@ -299,12 +299,17 @@ class TestDiscardedAttempts:
         assert usage.total_tokens == 30
 
     def test_discarded_cost_is_priced(
-        self, openai_client, mock_openai_response, mock_pydantic_model, stub_pricing
+        self,
+        openai_client,
+        mock_openai_response,
+        mock_pydantic_model,
+        stub_pricing,
+        wire_structured_output,
     ):
         """Test the wasted attempt is costed at the requested model's rates."""
         stub_pricing(TABLE)
         client, api = openai_client
-        api.beta.chat.completions.parse.side_effect = _failed_attempt(1_000_000, 1_000_000)
+        wire_structured_output(api, _failed_attempt(1_000_000, 1_000_000))
         api.chat.completions.create.return_value = mock_openai_response
 
         usage = client.prompt("requested-model", "Hi", response_format=mock_pydantic_model).usage
@@ -312,11 +317,11 @@ class TestDiscardedAttempts:
         assert usage.discarded_cost_usd == pytest.approx(11.0)
 
     def test_unbilled_failure_does_not_count_an_attempt(
-        self, openai_client, mock_openai_response, mock_pydantic_model
+        self, openai_client, mock_openai_response, mock_pydantic_model, wire_structured_output
     ):
         """Test a failure that generated nothing leaves the record untouched."""
         client, api = openai_client
-        api.beta.chat.completions.parse.side_effect = Exception("bad request")
+        wire_structured_output(api, Exception("bad request"))
         api.chat.completions.create.return_value = mock_openai_response
 
         usage = client.prompt("gpt-4", "Hi", response_format=mock_pydantic_model).usage
@@ -345,7 +350,7 @@ class TestDiscardedAttempts:
         assert usage.output_tokens == 25
 
     def test_concurrent_fallback_does_not_leak_between_threads(
-        self, openai_client, mock_openai_response, mock_pydantic_model
+        self, openai_client, mock_openai_response, mock_pydantic_model, wire_structured_output
     ):
         """Test one thread's discarded tokens never land on another thread's response.
 
@@ -366,7 +371,7 @@ class TestDiscardedAttempts:
                 barrier.wait()
             return mock_openai_response
 
-        api.beta.chat.completions.parse.side_effect = parse
+        wire_structured_output(api, parse)
         api.chat.completions.create.side_effect = create
 
         with ThreadPoolExecutor(max_workers=2) as pool:
@@ -435,11 +440,11 @@ class TestFailedRequestsRecordUsage:
         assert "error" in response.raw_response
 
     def test_discarded_tokens_survive_a_failed_fallback(
-        self, openai_client, instant_retries, mock_pydantic_model
+        self, openai_client, instant_retries, mock_pydantic_model, wire_structured_output
     ):
         """Test two billed attempts are reported when neither returned a response."""
         client, api = openai_client
-        api.beta.chat.completions.parse.side_effect = _failed_attempt(50, 60)
+        wire_structured_output(api, _failed_attempt(50, 60))
         api.chat.completions.create.side_effect = Exception("gateway timeout")
 
         usage = client.prompt("gpt-4", "Hi", response_format=mock_pydantic_model).usage
@@ -527,11 +532,11 @@ class TestNoDoubleCounting:
         assert usage.estimated_cost_usd == pytest.approx(11.0)
 
     def test_two_billed_failures_are_each_counted_once(
-        self, openai_client, instant_retries, mock_pydantic_model
+        self, openai_client, instant_retries, mock_pydantic_model, wire_structured_output
     ):
         """Test a billed parse failure and a billed fallback failure are kept apart."""
         client, api = openai_client
-        api.beta.chat.completions.parse.side_effect = _failed_attempt(50, 60)
+        wire_structured_output(api, _failed_attempt(50, 60))
         api.chat.completions.create.side_effect = _failed_attempt(100, 200)
 
         usage = client.prompt("gpt-4", "Hi", response_format=mock_pydantic_model).usage
@@ -547,11 +552,16 @@ class TestDiscardedReasoningIsPriced:
     """Tests that a discarded attempt's reasoning is charged, not dropped."""
 
     def test_discarded_reasoning_tokens_are_recorded(
-        self, openai_client, instant_retries, mock_openai_response, mock_pydantic_model
+        self,
+        openai_client,
+        instant_retries,
+        mock_openai_response,
+        mock_pydantic_model,
+        wire_structured_output,
     ):
         """Test reasoning billed outside the completion count survives the fallback."""
         client, api = openai_client
-        api.beta.chat.completions.parse.side_effect = _failed_attempt(100, 200, total_tokens=500)
+        wire_structured_output(api, _failed_attempt(100, 200, total_tokens=500))
         api.chat.completions.create.return_value = mock_openai_response
 
         usage = client.prompt("gpt-4", "Hi", response_format=mock_pydantic_model).usage
@@ -565,11 +575,12 @@ class TestDiscardedReasoningIsPriced:
         mock_openai_response,
         mock_pydantic_model,
         stub_pricing,
+        wire_structured_output,
     ):
         """Test the discarded cost covers reasoning at the output rate."""
         stub_pricing(TABLE)
         client, api = openai_client
-        api.beta.chat.completions.parse.side_effect = _failed_attempt(100, 200, total_tokens=500)
+        wire_structured_output(api, _failed_attempt(100, 200, total_tokens=500))
         api.chat.completions.create.return_value = mock_openai_response
 
         usage = client.prompt("requested-model", "Hi", response_format=mock_pydantic_model).usage
@@ -624,16 +635,60 @@ class TestBilledCostSurvivesFailure:
         mock_openai_response,
         mock_pydantic_model,
         stub_pricing,
+        wire_structured_output,
     ):
         """Test a discarded attempt reports what it was charged, not an estimate."""
         stub_pricing(TABLE)
         client, api = openai_client
-        api.beta.chat.completions.parse.side_effect = _failed_attempt(100, 200, cost=0.0123)
+        wire_structured_output(api, _failed_attempt(100, 200, cost=0.0123))
         api.chat.completions.create.return_value = mock_openai_response
 
         usage = client.prompt("requested-model", "Hi", response_format=mock_pydantic_model).usage
 
         assert usage.discarded_cost_usd == 0.0123
+
+
+class TestBilledCostOnEveryPath:
+    """Tests that a provider-billed cost survives whichever builder ran."""
+
+    def test_structured_path_keeps_the_billed_total(
+        self,
+        openai_client,
+        mock_openrouter_response,
+        mock_pydantic_model,
+        stub_pricing,
+        wire_structured_output,
+    ):
+        """Test the structured builder does not replace a billed cost with a list price."""
+        stub_pricing(TABLE)
+        client, api = openai_client
+        mock_openrouter_response.choices[0].message.parsed = None
+        wire_structured_output(api, mock_openrouter_response)
+
+        usage = client.prompt("requested-model", "Hi", response_format=mock_pydantic_model).usage
+
+        assert usage.estimated_cost_usd == 0.0123
+        assert usage.input_cost_usd is None
+
+    def test_legacy_completions_path_keeps_the_billed_total(self, openai_client, stub_pricing):
+        """Test the legacy builder does not replace a billed cost either."""
+        stub_pricing(TABLE)
+        client, api = openai_client
+        raw = Mock()
+        raw.model = "echoed"
+        raw.choices = [Mock()]
+        raw.choices[0].text = "Hi"
+        raw.choices[0].finish_reason = "stop"
+        raw.usage = Mock()
+        raw.usage.prompt_tokens = 1_000_000
+        raw.usage.completion_tokens = 1_000_000
+        raw.usage.total_tokens = 2_000_000
+        raw.usage.cost = 0.0123
+        api.completions.create.return_value = raw
+
+        usage = client.prompt("requested-model", "Hi", api_style="completions").usage
+
+        assert usage.estimated_cost_usd == 0.0123
 
 
 class TestEveryOpenAIBuilder:
@@ -651,14 +706,19 @@ class TestEveryOpenAIBuilder:
         assert usage.estimated_cost_usd is not None
 
     def test_parsed_builder(
-        self, openai_client, mock_openai_response, mock_pydantic_model, stub_pricing
+        self,
+        openai_client,
+        mock_openai_response,
+        mock_pydantic_model,
+        stub_pricing,
+        wire_structured_output,
     ):
         """Test _create_response_from_parsed prices the requested model."""
         stub_pricing(TABLE)
         client, api = openai_client
         mock_openai_response.model = "echoed"
         mock_openai_response.choices[0].message.parsed = None
-        api.beta.chat.completions.parse.return_value = mock_openai_response
+        wire_structured_output(api, mock_openai_response)
 
         usage = client.prompt("requested-model", "Hello", response_format=mock_pydantic_model).usage
 
@@ -702,3 +762,290 @@ class TestEveryOpenAIBuilder:
         usage = client.prompt("requested-model", "Hello", api_style="responses").usage
 
         assert usage.estimated_cost_usd is not None
+
+
+class TestStructuredOutputParseFailures:
+    """Tests that a response billed then rejected by the SDK is still accounted for.
+
+    These drive the real OpenAI SDK over a mocked transport. A Mock client cannot raise
+    the SDK's own parse failures, and those are exactly the paths that used to lose the
+    tokens: only LengthFinishReasonError carries the completion, while a content filter
+    and a schema mismatch raise exceptions holding nothing.
+    """
+
+    @staticmethod
+    def _completion(finish_reason, content):
+        """A chat completion body reporting 100 input and 200 output tokens."""
+        return {
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "gpt-4o-mini",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": finish_reason,
+                    "message": {"role": "assistant", "content": content},
+                }
+            ],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 200, "total_tokens": 300},
+        }
+
+    def _usage_after_failed_parse(self, first_body, mock_pydantic_model):
+        """Run a structured request whose first attempt fails, and return the usage."""
+        import httpx
+        from openai import OpenAI
+
+        calls = {"n": 0}
+
+        def handler(request):
+            calls["n"] += 1
+            body = first_body if calls["n"] == 1 else self._completion("stop", '{"name":"x"}')
+            return httpx.Response(200, json=body)
+
+        sdk = OpenAI(
+            api_key="test", http_client=httpx.Client(transport=httpx.MockTransport(handler))
+        )
+        with (
+            patch("ai_client.openai_client.OpenAI", return_value=sdk),
+            patch("ai_client.utils.time.sleep"),
+        ):
+            client = create_ai_client("openai", api_key="test")
+            usage = client.prompt("gpt-4o-mini", "Hi", response_format=mock_pydantic_model).usage
+        assert calls["n"] == 2, "the fallback should have made a second billed request"
+        return usage
+
+    def test_content_filter_failure_is_billed(self, mock_pydantic_model):
+        """Test a filtered response reports the tokens it was charged for."""
+        usage = self._usage_after_failed_parse(
+            self._completion("content_filter", None), mock_pydantic_model
+        )
+
+        assert usage.attempts == 2
+        assert usage.discarded_input_tokens == 100
+        assert usage.discarded_output_tokens == 200
+
+    def test_schema_mismatch_failure_is_billed(self, mock_pydantic_model):
+        """Test output that fails validation still reports what it cost."""
+        usage = self._usage_after_failed_parse(
+            self._completion("stop", '{"name":"x","value":"not-an-int"}'), mock_pydantic_model
+        )
+
+        assert usage.attempts == 2
+        assert usage.discarded_input_tokens == 100
+
+    def test_length_limit_failure_is_billed(self, mock_pydantic_model):
+        """Test the one failure mode that already carried its completion still works."""
+        usage = self._usage_after_failed_parse(
+            self._completion("length", '{"name":"x"'), mock_pydantic_model
+        )
+
+        assert usage.attempts == 2
+        assert usage.discarded_input_tokens == 100
+
+
+class TestConversionFailuresKeepTheirTokens:
+    """Tests that a response billed then rejected by local conversion is still counted."""
+
+    def test_malformed_tool_arguments_keep_the_billed_tokens(self):
+        """Test a response that arrives fine but will not convert is not zeroed.
+
+        The request is paid for by the time the arguments are parsed, so a malformed one
+        must not turn a billed response into an empty error.
+        """
+        import httpx
+        from openai import OpenAI
+
+        payload = {
+            "id": "c",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "m",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "tool_calls",
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "1",
+                                "type": "function",
+                                "function": {"name": "f", "arguments": "{not json"},
+                            }
+                        ],
+                    },
+                }
+            ],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 200, "total_tokens": 300},
+        }
+        sdk = OpenAI(
+            api_key="test",
+            http_client=httpx.Client(
+                transport=httpx.MockTransport(lambda r: httpx.Response(200, json=payload))
+            ),
+        )
+        with (
+            patch("ai_client.openai_client.OpenAI", return_value=sdk),
+            patch("ai_client.utils.time.sleep"),
+        ):
+            client = create_ai_client("openai", api_key="test")
+            usage = client.prompt("m", "Hi").usage
+
+        assert usage.input_tokens == 100
+        assert usage.output_tokens == 200
+
+    def test_two_failures_in_one_request_are_both_counted(self, mock_pydantic_model, stub_pricing):
+        """Test a billed parse failure and a billed conversion failure are both reported.
+
+        The structured attempt is thrown away by the fallback, and the fallback's own
+        response then fails to convert. Both were paid for, and each must appear once.
+        """
+        import httpx
+        from openai import OpenAI
+
+        stub_pricing(TABLE)
+
+        def body(cost, message, finish_reason="stop"):
+            return {
+                "id": "c",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "m",
+                "choices": [{"index": 0, "finish_reason": finish_reason, "message": message}],
+                "usage": {
+                    "prompt_tokens": 100,
+                    "completion_tokens": 200,
+                    "total_tokens": 300,
+                    "cost": cost,
+                },
+            }
+
+        parse_failure = body(
+            0.0123, {"role": "assistant", "content": '{"name":"x","value":"not-an-int"}'}
+        )
+        conversion_failure = body(
+            0.0456,
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "1",
+                        "type": "function",
+                        "function": {"name": "f", "arguments": "{not json"},
+                    }
+                ],
+            },
+            finish_reason="tool_calls",
+        )
+        calls = {"n": 0}
+
+        def handler(request):
+            calls["n"] += 1
+            body_for_call = parse_failure if calls["n"] % 2 == 1 else conversion_failure
+            return httpx.Response(200, json=body_for_call)
+
+        sdk = OpenAI(
+            api_key="test",
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+        with (
+            patch("ai_client.openai_client.OpenAI", return_value=sdk),
+            patch("ai_client.utils.time.sleep"),
+        ):
+            client = create_ai_client("openai", api_key="test")
+            usage = client.prompt(
+                "requested-model", "Hi", response_format=mock_pydantic_model
+            ).usage
+
+        assert usage.attempts == 2
+        assert usage.estimated_cost_usd == 0.0456
+        assert usage.discarded_cost_usd == 0.0123
+        assert usage.discarded_input_tokens == 100
+
+    def test_other_providers_keep_their_tokens_too(self, stub_pricing):
+        """Test the protection is shared, not specific to the OpenAI client.
+
+        Gemini's builder reads candidates[0] for the finish reason; a response arriving
+        with none raises there, after the request has already been billed.
+        """
+        stub_pricing(TABLE)
+        raw = Mock()
+        raw.text = "hi"
+        raw.usage_metadata = Mock()
+        raw.usage_metadata.prompt_token_count = 100
+        raw.usage_metadata.candidates_token_count = 200
+        raw.usage_metadata.total_token_count = 300
+        raw.usage_metadata.thoughts_token_count = 0
+        type(raw).candidates = property(
+            lambda self: (_ for _ in ()).throw(ValueError("no candidates"))
+        )
+
+        with patch("ai_client.gemini_client.genai") as genai, patch("ai_client.utils.time.sleep"):
+            api = Mock()
+            genai.Client.return_value = api
+            api.models.generate_content.return_value = raw
+
+            client = create_ai_client("genai", api_key="test-key")
+            usage = client.prompt("gemini-thinking", "Hi").usage
+
+        assert usage.input_tokens == 100
+        assert usage.output_tokens == 200
+
+    def test_cohere_conversion_failure_keeps_its_nested_counts(self, stub_pricing):
+        """Test recovery reads Cohere's counts, which sit below the usage block."""
+        stub_pricing({"2026-01-01": {"cohere": {"m": {"input_price": 1.0, "output_price": 10.0}}}})
+        raw = Mock()
+        raw.finish_reason = "COMPLETE"
+        raw.usage = Mock()
+        raw.usage.tokens = Mock()
+        raw.usage.tokens.input_tokens = 100.0  # Cohere reports floats
+        raw.usage.tokens.output_tokens = 200.0
+        type(raw).message = property(lambda self: (_ for _ in ()).throw(ValueError("bad message")))
+
+        with (
+            patch("ai_client.cohere_client.cohere") as cohere_module,
+            patch("ai_client.utils.time.sleep"),
+        ):
+            api = Mock()
+            cohere_module.ClientV2.return_value = api
+            api.chat.return_value = raw
+
+            client = create_ai_client("cohere", api_key="test-key")
+            usage = client.prompt("m", "Hi").usage
+
+        assert usage.input_tokens == 100
+        assert usage.output_tokens == 200
+        assert usage.estimated_cost_usd == pytest.approx(0.0021)
+
+    def test_recovery_derives_an_omitted_completion_count(self, stub_pricing):
+        """Test a provider reporting a total but no completion count is not under-billed.
+
+        Leaving output at zero would charge the whole remainder as reasoning, or drop it,
+        and the recorded tokens would not add up to the reported total.
+        """
+        stub_pricing(TABLE)
+        raw = Mock()
+        raw.usage_metadata = Mock()
+        raw.usage_metadata.prompt_token_count = 100
+        raw.usage_metadata.candidates_token_count = None
+        raw.usage_metadata.total_token_count = 500
+        raw.usage_metadata.thoughts_token_count = 200
+        type(raw).candidates = property(
+            lambda self: (_ for _ in ()).throw(ValueError("no candidates"))
+        )
+
+        with patch("ai_client.gemini_client.genai") as genai, patch("ai_client.utils.time.sleep"):
+            api = Mock()
+            genai.Client.return_value = api
+            api.models.generate_content.return_value = raw
+
+            client = create_ai_client("genai", api_key="test-key")
+            usage = client.prompt("gemini-thinking", "Hi").usage
+
+        assert usage.output_tokens == 200
+        assert usage.reasoning_tokens == 200
+        assert usage.input_tokens + usage.output_tokens + usage.reasoning_tokens == 500
+        assert usage.estimated_cost_usd == pytest.approx(0.0041)

@@ -2,6 +2,7 @@
 Shared test fixtures and configuration for pytest.
 """
 
+import inspect
 import json
 import pytest
 from unittest.mock import Mock
@@ -34,6 +35,31 @@ def stub_pricing(tmp_path):
     yield _stub
 
     ai_client.pricing._pricing_manager = None
+
+
+@pytest.fixture
+def wire_structured_output():
+    """
+    Point a mocked structured-output endpoint at a response, or an exception.
+
+    The client reads the body before the SDK validates it, so a test has to wire the
+    raw-response surface as well as the plain one. Yields a function taking the mocked
+    SDK client and the response or exception it should produce.
+    """
+
+    def _wire(api, outcome):
+        raw = api.beta.chat.completions.with_raw_response.parse
+        plain = api.beta.chat.completions.parse
+        if isinstance(outcome, BaseException) or inspect.isfunction(outcome):
+            plain.side_effect = outcome
+            raw.side_effect = outcome
+            return
+        plain.return_value = outcome
+        raw.side_effect = None
+        raw.return_value.parse.return_value = outcome
+        raw.return_value.text = "{}"
+
+    return _wire
 
 
 @pytest.fixture
@@ -236,8 +262,9 @@ def mock_cohere_response():
     # Mock usage information
     usage = Mock()
     tokens = Mock()
-    tokens.input_tokens = 13
-    tokens.output_tokens = 17
+    # Cohere reports whole numbers as floats.
+    tokens.input_tokens = 13.0
+    tokens.output_tokens = 17.0
     usage.tokens = tokens
 
     billed_units = Mock()

@@ -22,6 +22,7 @@ from .pricing import apply_costs, calculate_cost_components
 from .reasoning import uncounted_reasoning
 from .utils import (
     attach_discarded,
+    attach_payload,
     billed_cost,
     error_payload,
     extract_json_from_text,
@@ -32,11 +33,19 @@ from .utils import (
 
 logger = logging.getLogger(__name__)
 
-# Reasoning model families, matched as a prefix on the bare model id. Their chat endpoint
-# requires max_completion_tokens in place of max_tokens, and accepts only the default
-# temperature. Both are corrected before the call; _call_with_parameter_retry covers
-# families released after this version.
-REASONING_MODEL_PREFIXES = ("gpt-5", "gpt-6", "o1", "o3", "o4")
+# The two rules below have different boundaries and must not be merged: every gpt-5.x
+# needs the renamed token cap, but gpt-5.1 and newer accept a custom temperature while
+# gpt-5, gpt-5-mini, gpt-5-nano and the o-series do not. Both verified against the API.
+
+# Models whose chat endpoint takes max_completion_tokens instead of max_tokens. A loose
+# prefix, since the whole series renamed the parameter.
+MAX_COMPLETION_TOKENS_PREFIXES = ("gpt-5", "gpt-6", "o1", "o3", "o4")
+
+# Models that accept only their default temperature. Matched as a family -- the exact
+# name, or a "-" suffix of it -- so "gpt-5-nano" is covered while "gpt-5.1" is not.
+# Discarding a temperature a model would have honoured silently changes sampling, so
+# this list stays narrow and _call_with_parameter_retry recovers for anything it misses.
+FIXED_TEMPERATURE_FAMILIES = ("gpt-5", "o1", "o3", "o4")
 
 
 class OpenAIClient(BaseAIClient):
@@ -308,10 +317,13 @@ class OpenAIClient(BaseAIClient):
                 # Use beta.chat.completions.parse for Pydantic v2 structured output
                 try:
                     params["response_format"] = response_format
-                    raw_response = self._call_with_parameter_retry(
-                        self.api_client.beta.chat.completions.parse, params, model
+                    raw_response = self._parse_structured(params, model)
+                    return self._build_response(
+                        self._create_response_from_parsed,
+                        raw_response,
+                        model,
+                        discarded=discarded,
                     )
-                    return self._create_response_from_parsed(raw_response, model, discarded)
                 except Exception as e:
                     wasted = self._record_discarded_attempt(discarded, e, self.PROVIDER_ID, model)
                     if self._is_non_chat_model_error(e):
@@ -379,7 +391,13 @@ class OpenAIClient(BaseAIClient):
             # by _create_error_response; adding it would count the same call twice.
             raise attach_discarded(e, discarded)
 
-        return self._create_response_from_raw(raw_response, model, response_format, discarded)
+        return self._build_response(
+            self._create_response_from_raw,
+            raw_response,
+            model,
+            response_format,
+            discarded=discarded,
+        )
 
     def _do_responses_api(
         self,
@@ -461,7 +479,9 @@ class OpenAIClient(BaseAIClient):
             }
 
         raw_response = self.api_client.responses.create(**responses_params)
-        return self._create_response_from_responses(raw_response, model, response_format)
+        return self._build_response(
+            self._create_response_from_responses, raw_response, model, response_format
+        )
 
     def _create_response_from_responses(
         self,
@@ -495,16 +515,7 @@ class OpenAIClient(BaseAIClient):
                 output_tokens=raw_response.usage.output_tokens,
                 total_tokens=raw_response.usage.total_tokens,
             )
-            usage.reasoning_tokens = uncounted_reasoning(
-                usage.input_tokens,
-                usage.output_tokens,
-                usage.total_tokens,
-                raw_response,
-                provider=self.PROVIDER_ID,
-                model=model,
-            )
-            # Priced on the requested model, not the id the response echoed back.
-            apply_costs(usage, self.PROVIDER_ID, model)
+            self._finalize_usage(usage, raw_response, model)
 
         if discarded is not None:
             discarded.apply_to(usage)
@@ -520,7 +531,12 @@ class OpenAIClient(BaseAIClient):
         )
 
     @staticmethod
-    def _uses_max_completion_tokens(model: str) -> bool:
+    def _bare_name(model: str) -> str:
+        """Strip any provider prefix and routing suffix from a model id."""
+        return model.split("/")[-1].split(":")[0].lower()
+
+    @classmethod
+    def _uses_max_completion_tokens(cls, model: str) -> bool:
         """
         Return True if the model's chat endpoint requires max_completion_tokens.
 
@@ -528,13 +544,20 @@ class OpenAIClient(BaseAIClient):
         pinned "gpt-5:groq" resolves, while an unrelated id that merely contains "o1"
         does not.
         """
-        bare = model.split("/")[-1].split(":")[0].lower()
-        return bare.startswith(REASONING_MODEL_PREFIXES)
+        return cls._bare_name(model).startswith(MAX_COMPLETION_TOKENS_PREFIXES)
 
     @classmethod
     def _rejects_custom_temperature(cls, model: str) -> bool:
-        """Return True if the model accepts only its default temperature."""
-        return cls._uses_max_completion_tokens(model)
+        """
+        Return True if the model accepts only its default temperature.
+
+        Deliberately narrower than the token cap rule: gpt-5.1 and newer honour a
+        temperature, and silently discarding one would change a caller's sampling.
+        """
+        bare = cls._bare_name(model)
+        return any(
+            bare == family or bare.startswith(f"{family}-") for family in FIXED_TEMPERATURE_FAMILIES
+        )
 
     @staticmethod
     def _rename_token_cap(params: dict) -> bool:
@@ -549,6 +572,69 @@ class OpenAIClient(BaseAIClient):
         """Return True if the provider rejected max_tokens in favour of the newer name."""
         message = str(error).lower()
         return "max_tokens" in message and "max_completion_tokens" in message
+
+    def _finalize_usage(self, usage: Usage, raw_response: Any, model: str) -> None:
+        """
+        Fill a response's reasoning count and cost fields.
+
+        Priced on the model as requested rather than the id the response echoed back:
+        routers rewrite names, and a rewritten name misses the pricing table. A cost the
+        provider reports having billed is kept as it stands, on every path rather than
+        only the plain chat one.
+
+        Args:
+            usage: Usage built from the response, filled in place
+            raw_response: The provider's response
+            model: Model identifier as requested
+        """
+        usage.reasoning_tokens = uncounted_reasoning(
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.total_tokens,
+            raw_response,
+            provider=self.PROVIDER_ID,
+            model=model,
+        )
+        billed = billed_cost(getattr(raw_response, "usage", None))
+        if billed is not None:
+            usage.estimated_cost_usd = billed
+        apply_costs(usage, self.PROVIDER_ID, model)
+
+    def _parse_structured(self, params: dict, model: str):
+        """
+        Call the structured-output endpoint, keeping the body if parsing fails.
+
+        The SDK validates after the request has returned, and two of its three failure
+        modes raise exceptions carrying nothing: a content filter, and output that does
+        not match the schema. Those tokens are billed all the same, so the body is taken
+        first and attached to the exception for the usage recovery to find.
+
+        Args:
+            params: Request parameters
+            model: Model identifier as requested
+
+        Returns:
+            The parsed completion
+        """
+        endpoint = self.api_client.beta.chat.completions
+        with_raw_response = getattr(endpoint, "with_raw_response", None)
+        if with_raw_response is None:  # an SDK that cannot show the body first
+            return self._call_with_parameter_retry(endpoint.parse, params, model)
+
+        response = self._call_with_parameter_retry(with_raw_response.parse, params, model)
+        try:
+            return response.parse()
+        except Exception as error:
+            raise attach_payload(error, self._response_body(response))
+
+    @staticmethod
+    def _response_body(response):
+        """Return a raw response body as a mapping, or None if it cannot be read."""
+        try:
+            body = json.loads(response.text)
+        except Exception:
+            return None
+        return body if isinstance(body, dict) else None
 
     def _call_with_parameter_retry(self, send, params: dict, model: str):
         """
@@ -576,14 +662,14 @@ class OpenAIClient(BaseAIClient):
                     logger.warning(
                         f"Model {model} rejected max_tokens; retrying with "
                         f"max_completion_tokens. Add its prefix to "
-                        f"REASONING_MODEL_PREFIXES to skip this round trip."
+                        f"MAX_COMPLETION_TOKENS_PREFIXES to skip this round trip."
                     )
                     continue
                 if rejects_parameter(error, "temperature") and "temperature" in params:
                     del params["temperature"]
                     logger.warning(
                         f"Model {model} rejected a custom temperature; retrying without "
-                        f"one. Add its prefix to REASONING_MODEL_PREFIXES to skip this "
+                        f"one. Add its family to FIXED_TEMPERATURE_FAMILIES to skip this "
                         f"round trip."
                     )
                     continue
@@ -686,8 +772,12 @@ class OpenAIClient(BaseAIClient):
             legacy_params["max_tokens"] = params["max_completion_tokens"]
 
         raw_response = self.api_client.completions.create(**legacy_params)
-        return self._create_response_from_completions(
-            raw_response, model, response_format, discarded
+        return self._build_response(
+            self._create_response_from_completions,
+            raw_response,
+            model,
+            response_format,
+            discarded=discarded,
         )
 
     def _create_response_from_completions(
@@ -723,16 +813,7 @@ class OpenAIClient(BaseAIClient):
                 output_tokens=raw_response.usage.completion_tokens,
                 total_tokens=raw_response.usage.total_tokens,
             )
-            usage.reasoning_tokens = uncounted_reasoning(
-                usage.input_tokens,
-                usage.output_tokens,
-                usage.total_tokens,
-                raw_response,
-                provider=self.PROVIDER_ID,
-                model=model,
-            )
-            # Priced on the requested model, not the id the response echoed back.
-            apply_costs(usage, self.PROVIDER_ID, model)
+            self._finalize_usage(usage, raw_response, model)
 
         if discarded is not None:
             discarded.apply_to(usage)
@@ -800,17 +881,7 @@ class OpenAIClient(BaseAIClient):
                     else None
                 ),
             )
-            usage.reasoning_tokens = uncounted_reasoning(
-                usage.input_tokens,
-                usage.output_tokens,
-                usage.total_tokens,
-                raw_response,
-                provider=self.PROVIDER_ID,
-                model=model,
-            )
-            # Priced on the requested model, not the id the response echoed back: routers
-            # normalize the name, and a normalized name misses the pricing table.
-            apply_costs(usage, self.PROVIDER_ID, model)
+            self._finalize_usage(usage, raw_response, model)
 
         if discarded is not None:
             discarded.apply_to(usage)
@@ -911,23 +982,7 @@ class OpenAIClient(BaseAIClient):
                 total_tokens=raw_response.usage.total_tokens,
                 cached_tokens=cached_tokens_value,
             )
-            # OpenRouter may report what it actually billed. isinstance rather than hasattr:
-            # the attribute exists on any mock, and a cost of None is not a billed total.
-            billed = billed_cost(raw_response.usage)
-            if billed is not None:
-                usage.estimated_cost_usd = billed
-
-            usage.reasoning_tokens = uncounted_reasoning(
-                usage.input_tokens,
-                usage.output_tokens,
-                usage.total_tokens,
-                raw_response,
-                provider=self.PROVIDER_ID,
-                model=model,
-            )
-            # Leaves the billed total above untouched; prices on the requested model, not
-            # the id the response echoed back.
-            apply_costs(usage, self.PROVIDER_ID, model)
+            self._finalize_usage(usage, raw_response, model)
 
         if discarded is not None:
             discarded.apply_to(usage)

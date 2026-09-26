@@ -152,7 +152,9 @@ class MistralClient(BaseAIClient):
         # Send the request
         raw_response = self.api_client.chat.complete(**params)
 
-        return self._create_response_from_raw(raw_response, model, response_format)
+        return self._build_response(
+            self._create_response_from_raw, raw_response, model, response_format
+        )
 
     def _create_response_from_raw(
         self, raw_response: Any, model: str, response_format: Optional[Any]

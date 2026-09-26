@@ -119,21 +119,63 @@ def is_rate_limit_error(exception: Exception) -> bool:
     return any(indicator in error_message for indicator in rate_limit_indicators)
 
 
-_INPUT_TOKEN_KEYS = ("prompt_tokens", "input_tokens")
-_OUTPUT_TOKEN_KEYS = ("completion_tokens", "output_tokens")
+# Providers name the same three counts differently: OpenAI, Anthropic and genai in turn.
+_INPUT_TOKEN_KEYS = ("prompt_tokens", "input_tokens", "prompt_token_count")
+_OUTPUT_TOKEN_KEYS = ("completion_tokens", "output_tokens", "candidates_token_count")
+_TOTAL_TOKEN_KEYS = ("total_tokens", "total_token_count")
+
+# Where a response-shaped payload carries its usage block.
+_USAGE_KEYS = ("usage", "usage_metadata")
+
+# Cohere reports its counts one level below the usage block.
+_NESTED_USAGE_KEYS = ("tokens", "billed_units")
 
 # Discarded-attempt totals travel on the exception itself when a fallback also fails, so
 # the error response can still report what was billed. Per-exception, so thread-safe.
 DISCARDED_ATTRIBUTE = "_ai_client_discarded"
 
+# A response body attached to an exception that arrived without one, for the same reason.
+PAYLOAD_ATTRIBUTE = "_ai_client_payload"
+
+
+def _member(source, key):
+    """Read a key from a mapping or an attribute from an object."""
+    return source.get(key) if isinstance(source, dict) else getattr(source, key, None)
+
 
 def _read_token_count(source, keys) -> Optional[int]:
     """Read the first of keys present on a mapping or object as a plain integer."""
     for key in keys:
-        value = source.get(key) if isinstance(source, dict) else getattr(source, key, None)
-        if isinstance(value, int) and not isinstance(value, bool):
+        value = _member(source, key)
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int):
             return value
+        # Cohere reports whole numbers as floats.
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
     return None
+
+
+def _counts_holder(source):
+    """Return whichever object actually holds the counts, one level down if needed."""
+    if source is None:
+        return None
+    if _read_token_count(source, _INPUT_TOKEN_KEYS + _OUTPUT_TOKEN_KEYS) is not None:
+        return source
+
+    for key in _NESTED_USAGE_KEYS:
+        nested = _member(source, key)
+        if nested is not None and (
+            _read_token_count(nested, _INPUT_TOKEN_KEYS + _OUTPUT_TOKEN_KEYS) is not None
+        ):
+            return nested
+    return None
+
+
+def output_reported(source) -> bool:
+    """Return True if the provider actually reported a completion count."""
+    return _read_token_count(_counts_holder(source), _OUTPUT_TOKEN_KEYS) is not None
 
 
 def usage_counts(source) -> Optional[tuple]:
@@ -152,14 +194,16 @@ def usage_counts(source) -> Optional[tuple]:
     if source is None:
         return None
 
+    source = _counts_holder(source)
+    if source is None:
+        return None
+
     input_tokens = _read_token_count(source, _INPUT_TOKEN_KEYS)
     output_tokens = _read_token_count(source, _OUTPUT_TOKEN_KEYS)
-    if input_tokens is None and output_tokens is None:
-        return None
 
     input_tokens = input_tokens or 0
     output_tokens = output_tokens or 0
-    total = _read_token_count(source, ("total_tokens",))
+    total = _read_token_count(source, _TOTAL_TOKEN_KEYS)
     return (input_tokens, output_tokens, input_tokens + output_tokens if total is None else total)
 
 
@@ -211,10 +255,15 @@ def billed_cost(source) -> Optional[float]:
 
 
 def usage_of(payload):
-    """Return the usage object held by a response-shaped payload."""
+    """Return the usage object held by a response-shaped payload, whatever it calls it."""
     if payload is None:
         return None
-    return payload.get("usage") if isinstance(payload, dict) else getattr(payload, "usage", None)
+
+    for key in _USAGE_KEYS:
+        usage = payload.get(key) if isinstance(payload, dict) else getattr(payload, key, None)
+        if usage_counts(usage) is not None:
+            return usage
+    return None
 
 
 def error_payload(exception: Exception):
@@ -233,6 +282,10 @@ def error_payload(exception: Exception):
     Returns:
         The payload holding a usage block, or None if the failure carried none
     """
+    attached = getattr(exception, PAYLOAD_ATTRIBUTE, None)
+    if usage_counts(usage_of(attached)) is not None:
+        return attached
+
     completion = getattr(exception, "completion", None)
     if usage_counts(getattr(completion, "usage", None)) is not None:
         return completion
@@ -281,6 +334,29 @@ def attach_discarded(exception: Exception, discarded) -> Exception:
         setattr(exception, DISCARDED_ATTRIBUTE, discarded)
     except AttributeError:  # exceptions defined with __slots__
         pass
+    return exception
+
+
+def attach_payload(exception: Exception, payload) -> Exception:
+    """
+    Carry a response body on an exception that arrived without one.
+
+    An SDK validates after the request returns, and some of its failures raise exceptions
+    holding nothing -- a content filter, or output that does not match the schema. The
+    tokens were billed regardless, so the caller attaches the body it already has.
+
+    Args:
+        exception: Exception about to be raised
+        payload: Response body, as a mapping
+
+    Returns:
+        The same exception
+    """
+    if payload is not None:
+        try:
+            setattr(exception, PAYLOAD_ATTRIBUTE, payload)
+        except AttributeError:  # exceptions defined with __slots__
+            pass
     return exception
 
 

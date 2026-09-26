@@ -11,6 +11,26 @@ from datetime import datetime
 from typing import Any, Optional, Union
 
 
+def token_count(value) -> int:
+    """
+    Normalise a provider's reported token count.
+
+    An omitted count becomes zero, and a whole number reported as a float becomes an int,
+    so stored records are comparable across providers. Anything else is left alone.
+
+    Args:
+        value: Count as the provider reported it
+
+    Returns:
+        The count as a plain integer
+    """
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, float):
+        return int(value)
+    return value or 0
+
+
 @dataclass
 class Usage:
     """
@@ -59,11 +79,11 @@ class Usage:
         both of Anthropic's cache counters. A None reaching cost calculation or
         get_total_input_tokens turns a successful response into an error response.
         """
-        self.input_tokens = self.input_tokens or 0
-        self.output_tokens = self.output_tokens or 0
-        self.total_tokens = self.total_tokens or 0
-        self.cache_creation_tokens = self.cache_creation_tokens or 0
-        self.cache_read_tokens = self.cache_read_tokens or 0
+        self.input_tokens = token_count(self.input_tokens)
+        self.output_tokens = token_count(self.output_tokens)
+        self.total_tokens = token_count(self.total_tokens)
+        self.cache_creation_tokens = token_count(self.cache_creation_tokens)
+        self.cache_read_tokens = token_count(self.cache_read_tokens)
 
     def get_total_input_tokens(self) -> int:
         """

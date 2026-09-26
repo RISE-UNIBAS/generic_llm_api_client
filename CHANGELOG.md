@@ -32,11 +32,14 @@ can be the majority of a response, so cost was understated several-fold.
 - `utils.usage_counts` and `utils.usage_from_error`, recovering token counts from a provider
   usage object or from a failed request's exception.
 - Request parameters are adapted to what a model accepts, so a caller can pass the same
-  settings to every model. gpt-5 and newer need `max_completion_tokens` in place of
-  `max_tokens` and take only their default temperature; newer Claude models have retired
-  `temperature` altogether and reject it outright. Known model families are corrected
-  before the call, and anything else recovers by retrying once when the provider refuses
-  a parameter, so a model released after this version still works.
+  settings to every model. The whole gpt-5 series needs `max_completion_tokens` in place
+  of `max_tokens`; gpt-5, its mini and nano sizes and the o-series accept only their
+  default temperature, while gpt-5.1 and newer honour one; and newer Claude models have
+  retired `temperature` altogether and reject it outright. The two rules are kept
+  separate, because discarding a temperature a model would have honoured silently
+  changes sampling. Known families are corrected before the call, and anything else
+  recovers by retrying once when the provider refuses a parameter, so a model released
+  after this version still works.
 
 ### Changed
 
@@ -53,9 +56,10 @@ can be the majority of a response, so cost was understated several-fold.
 - Failed requests report whatever usage the failure carried, instead of all zeros.
 - A cost the provider billed directly is never recalculated. Such a total arrives with no
   component costs beside it, which is how it is recognised; OpenRouter routes are unpinned,
-  so the provider's own figure is the only accurate one. This holds on failure paths too: a
-  billed cost on a failed request, or on an attempt a fallback discarded, is preserved
-  rather than replaced by a list-price estimate.
+  so the provider's own figure is the only accurate one. This holds on every response path
+  rather than only plain chat completions, and on failure paths too: a billed cost on a
+  failed request, or on an attempt a fallback discarded, is preserved rather than replaced
+  by a list-price estimate.
 
 ### Fixed
 
@@ -64,12 +68,23 @@ can be the majority of a response, so cost was understated several-fold.
   `None` on a thinking response that stopped early), Anthropic's two cache counters, and
   non-numeric `cached_tokens` in one of the four OpenAI response builders. Token counts are
   now coerced in `Usage.__post_init__`.
-- Gemini responses missing `candidates_token_count` now recover the completion count from
-  the total rather than charging the whole remainder as reasoning.
+- A response reporting a total but no completion count now has that count recovered from
+  the total, rather than charging the whole remainder as reasoning. genai omits it on a
+  thinking response that stopped early. This applies on failure paths as well, and usage
+  recovery understands each provider's shape, including counts nested below the usage
+  block as Cohere reports them.
 - The structured-output fallback lost the first attempt's tokens entirely. Both the OpenAI
-  `.parse()` fallback and the Claude dropped-tool retry now report them.
+  `.parse()` fallback and the Claude dropped-tool retry now report them. The response body
+  is read before the SDK validates it, so the tokens survive a content filter or a schema
+  mismatch as well -- those raise exceptions carrying nothing, though the request was
+  billed like any other.
 - A tool-calling request whose second call failed discarded the first call's usage and cost
   along with it.
+- A response that arrived and was billed but then failed local conversion, such as one
+  carrying malformed tool arguments, became an error response reporting zero tokens. The
+  request is paid for by that point, so its usage is now recorded, together with any
+  earlier attempt the same request had already thrown away. This applies to every
+  provider, not only the OpenAI-compatible ones.
 - The OpenRouter billed-cost branch was selected with `hasattr`, so a `cost` of `None`
   counted as a billed total and every mocked usage object took the branch.
 - DeepSeek images are no longer dropped for `deepseek-flash`, which accepts them despite
@@ -78,6 +93,9 @@ can be the majority of a response, so cost was understated several-fold.
   a release.
 - Listing models no longer fails for providers that report no creation timestamp.
   DeepSeek returns None, which raised TypeError and lost the entire catalogue.
+- Token counts are stored as integers whatever a provider reports. Cohere returns whole
+  numbers as floats, which reached stored records as `187.0` and made its counts
+  unreadable to the usage recovery.
 - `pyproject.toml` and `ai_client/__init__.py` no longer disagree. 0.4.6 shipped reporting
   `0.4.5` from `ai_client.__version__`.
 
