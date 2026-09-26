@@ -7,7 +7,6 @@ interactions with vision models.
 """
 
 import base64
-import json
 import logging
 from typing import List, Tuple, Any, Optional
 
@@ -17,7 +16,7 @@ from .base_client import BaseAIClient
 from .response import LLMResponse, Usage, token_count
 from .pricing import apply_costs
 from .reasoning import uncounted_reasoning
-from .utils import extract_json_from_text
+from .utils import extract_json_from_text, rejects_schema_echo, schema_instruction
 
 logger = logging.getLogger(__name__)
 
@@ -152,9 +151,7 @@ class CohereClient(BaseAIClient):
         if response_format and hasattr(response_format, "model_json_schema"):
             schema = response_format.model_json_schema()
             # Add schema to prompt
-            schema_prompt = (
-                f"\n\nReturn a JSON response matching this exact schema: {json.dumps(schema)}"
-            )
+            schema_prompt = schema_instruction(schema)
             # Append to the last user message
             if isinstance(chat_messages[-1]["content"], list):
                 # Find text content and append
@@ -208,7 +205,7 @@ class CohereClient(BaseAIClient):
         parsed_data = None
 
         # Try to extract JSON from the response (works with or without response_format)
-        extracted_json = extract_json_from_text(text)
+        extracted_json = rejects_schema_echo(extract_json_from_text(text), response_format)
 
         # If response_format was provided, validate with Pydantic
         if response_format and hasattr(response_format, "model_json_schema") and extracted_json:

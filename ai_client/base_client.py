@@ -12,7 +12,7 @@ import time
 import asyncio
 from typing import List, Tuple, Any, Optional, Union
 from .response import DiscardedAttempts, LLMResponse, Usage
-from .pricing import apply_costs
+from .pricing import record_costs
 from .reasoning import derived_output, uncounted_reasoning
 from .utils import (
     attach_discarded,
@@ -20,7 +20,6 @@ from .utils import (
     retry_with_exponential_backoff,
     read_text_files,
     resize_image_if_needed,
-    billed_cost,
     discarded_from_error,
     error_payload,
     output_reported,
@@ -607,12 +606,8 @@ class BaseAIClient(abc.ABC):
                 provider=self.PROVIDER_ID,
                 model=model,
             )
-            # A cost the provider billed survives; apply_costs leaves it alone because no
-            # component costs sit beside it.
-            billed = billed_cost(usage_of(payload))
-            if billed is not None:
-                usage.estimated_cost_usd = billed
-            apply_costs(usage, self.PROVIDER_ID, model)
+            # A cost the provider billed survives, with its parts where it itemised them.
+            record_costs(usage, usage_of(payload), self.PROVIDER_ID, model)
             raw_response["usage"] = usage.to_dict()
 
         # Attempts billed before the failure: those a fallback threw away, and any earlier

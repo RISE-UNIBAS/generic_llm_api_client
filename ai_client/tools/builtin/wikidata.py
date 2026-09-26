@@ -6,7 +6,7 @@ Uses the Wikidata API (no authentication required).
 """
 
 import requests
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 
 def search_wikidata(query: str, max_results: int = 5) -> Dict[str, Any]:

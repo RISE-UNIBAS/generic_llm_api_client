@@ -1049,3 +1049,172 @@ class TestConversionFailuresKeepTheirTokens:
         assert usage.reasoning_tokens == 200
         assert usage.input_tokens + usage.output_tokens + usage.reasoning_tokens == 500
         assert usage.estimated_cost_usd == pytest.approx(0.0041)
+
+
+# How OpenRouter itemised a real bill: the two parts make up the total exactly.
+ITEMISED = {
+    "upstream_inference_cost": 0.00092005,
+    "upstream_inference_prompt_cost": 0.0002725,
+    "upstream_inference_completions_cost": 0.00064755,
+}
+
+
+class TestBilledCostComponents:
+    """Tests that the parts of a billed cost are recorded where the provider itemised them."""
+
+    def test_success_records_the_itemised_parts(
+        self, openai_client, mock_openrouter_response, stub_pricing
+    ):
+        """
+        Test a routed success keeps its billed total and records both parts.
+
+        The table prices requested-model at far more than was billed, so a repricing
+        would show here rather than pass unnoticed.
+        """
+        stub_pricing(TABLE)
+        client, api = openai_client
+        mock_openrouter_response.usage.cost = 0.00092005
+        mock_openrouter_response.usage.is_byok = False
+        mock_openrouter_response.usage.cost_details = dict(ITEMISED)
+        api.chat.completions.create.return_value = mock_openrouter_response
+
+        usage = client.prompt("requested-model", "Hi").usage
+
+        assert usage.estimated_cost_usd == 0.00092005
+        assert usage.input_cost_usd == 0.0002725
+        assert usage.output_cost_usd == 0.00064755
+
+    def test_split_short_of_the_total_leaves_the_parts_unknown(
+        self, openai_client, mock_openrouter_response, stub_pricing
+    ):
+        """Test a request fee outside both parts keeps the total and records no split."""
+        stub_pricing(TABLE)
+        client, api = openai_client
+        mock_openrouter_response.usage.cost = 0.00092005 + 0.000765
+        mock_openrouter_response.usage.is_byok = False
+        mock_openrouter_response.usage.cost_details = {
+            **ITEMISED,
+            "upstream_inference_cost": None,
+        }
+        api.chat.completions.create.return_value = mock_openrouter_response
+
+        usage = client.prompt("requested-model", "Hi").usage
+
+        assert usage.estimated_cost_usd == pytest.approx(0.00168505)
+        assert usage.input_cost_usd is None
+        assert usage.output_cost_usd is None
+
+    def test_bring_your_own_key_leaves_the_parts_unknown(
+        self, openai_client, mock_openrouter_response, stub_pricing
+    ):
+        """Test a BYOK route, billed partly elsewhere, records no split."""
+        stub_pricing(TABLE)
+        client, api = openai_client
+        mock_openrouter_response.usage.cost = 0.00092005
+        mock_openrouter_response.usage.is_byok = True
+        mock_openrouter_response.usage.cost_details = dict(ITEMISED)
+        api.chat.completions.create.return_value = mock_openrouter_response
+
+        usage = client.prompt("requested-model", "Hi").usage
+
+        assert usage.estimated_cost_usd == 0.00092005
+        assert usage.input_cost_usd is None
+        assert usage.output_cost_usd is None
+
+    def test_error_response_records_the_itemised_parts(
+        self, openai_client, instant_retries, stub_pricing
+    ):
+        """Test a failed request that reported an itemised bill carries the split too."""
+        stub_pricing(TABLE)
+        client, api = openai_client
+        error = _failed_attempt(1_000_000, 1_000_000, cost=0.00092005)
+        error.completion.usage.is_byok = False
+        error.completion.usage.cost_details = dict(ITEMISED)
+        api.chat.completions.create.side_effect = error
+
+        usage = client.prompt("requested-model", "Hi").usage
+
+        assert usage.estimated_cost_usd == 0.00092005
+        assert usage.input_cost_usd == 0.0002725
+        assert usage.output_cost_usd == 0.00064755
+
+
+class TestSchemaEchoIsAFailedParse:
+    """Tests that a JSON-mode answer repeating the schema is not taken as data."""
+
+    @staticmethod
+    def _optional_model():
+        from typing import Optional
+
+        from pydantic import BaseModel
+
+        class Author(BaseModel):
+            name: Optional[str] = None
+
+        return Author
+
+    def test_openai_json_mode_rejects_an_echo(self, openai_client, mock_openai_response):
+        """Test the chat-completions builder leaves parsed empty for an echoed schema."""
+        import json
+
+        client, _ = openai_client
+        model = self._optional_model()
+        echo = json.dumps(model.model_json_schema())
+        mock_openai_response.choices[0].message.content = echo
+
+        response = client._create_response_from_raw(mock_openai_response, "gpt-4", model)
+
+        assert response.parsed is None
+        assert response.text == echo
+
+    def test_openai_json_mode_keeps_an_answer(self, openai_client, mock_openai_response):
+        """Test a real answer in JSON mode is still parsed."""
+        client, _ = openai_client
+        mock_openai_response.choices[0].message.content = '{"name": "Euler"}'
+
+        response = client._create_response_from_raw(
+            mock_openai_response, "gpt-4", self._optional_model()
+        )
+
+        assert response.parsed == {"name": "Euler"}
+
+    def test_fallback_prompt_asks_for_an_instance(
+        self, openai_client, mock_openai_response, wire_structured_output, instant_retries
+    ):
+        """Test the JSON-mode fallback prompt no longer invites a copy of the schema."""
+        client, api = openai_client
+        wire_structured_output(api, Exception("structured output failed"))
+        api.chat.completions.create.return_value = mock_openai_response
+        mock_openai_response.choices[0].message.content = '{"name": "Euler"}'
+
+        client.prompt("gpt-4", "Who?", response_format=self._optional_model())
+
+        messages = api.chat.completions.create.call_args.kwargs["messages"]
+        prompt = messages[-1]["content"]
+        text = (
+            prompt
+            if isinstance(prompt, str)
+            else " ".join(block.get("text", "") for block in prompt)
+        )
+        assert "instance of the JSON Schema" in text
+        assert "matching this exact schema" not in text
+
+    def test_mistral_rejects_an_echo(self):
+        """Test the Mistral builder leaves parsed empty for an echoed schema."""
+        import json
+
+        from ai_client.mistral_client import MistralClient
+
+        with patch("ai_client.mistral_client.Mistral"):
+            client = MistralClient(api_key="test")
+        model = self._optional_model()
+        raw = Mock()
+        raw.model = "mistral-large"
+        raw.choices = [Mock()]
+        raw.choices[0].message.content = json.dumps(model.model_json_schema())
+        raw.choices[0].finish_reason = "stop"
+        raw.usage = None
+
+        response = client._create_response_from_raw(raw, "mistral-large", model)
+
+        assert response.parsed is None

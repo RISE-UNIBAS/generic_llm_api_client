@@ -5,6 +5,37 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.5.1] - 2026-09-26
+
+### Added
+
+- `input_cost_usd` and `output_cost_usd` are now recorded for provider-billed costs where
+  the provider itemises the bill. For OpenRouter these come from
+  `cost_details.upstream_inference_prompt_cost` and `upstream_inference_completions_cost`.
+  They are used only when both are numbers and together equal the billed `cost`. Otherwise
+  both stay `None`: a per-request fee that belongs to neither part is not divided between
+  them, and a bring-your-own-key route (`is_byok: true`), whose total is OpenRouter's fee
+  alone, is not split. `estimated_cost_usd` remains the billed `cost`, unchanged. This
+  applies to successful responses and to failed requests that reported usage.
+- `utils.billed_components`, beside `utils.billed_cost`, and `pricing.record_costs`, which
+  fills a `Usage` from a billed cost where one was reported and from list prices otherwise.
+
+### Fixed
+
+- The JSON-mode prompt no longer invites a model to answer with the schema itself. Asked
+  for JSON "matching this exact schema", some models returned the schema, which parses and
+  validates against a model with optional fields while carrying no data. The OpenAI
+  fallback, Mistral and Cohere now ask for an instance of the schema filled with values.
+- A JSON-mode response that repeats the schema (`$defs`, `properties` or `$schema` at the
+  top level where the schema declares no such field) is now treated as a failed parse:
+  `parsed` is `None`, the text is kept as returned, and a warning is logged.
+
+### Notes for consumers
+
+- A billed total can now arrive with components beside it. Code that took "components
+  present" to mean "list-price estimate" must stop doing so. `reasoning_cost_usd` stays
+  `None` for billed costs, and the input and output parts sum to the total.
+
 ## [v0.5.0] - 2026-09-25
 
 This release extends cost accounting to include previously omitted reasoning tokens,
@@ -106,4 +137,5 @@ for the largest omission and could cause costs to be understated by several time
 - Discarded-attempt totals cover the final attempt of a request. The retry wrapper re-enters
   the provider call on failure, and the accumulator starts fresh each time.
 
+[v0.5.1]: https://github.com/RISE-UNIBAS/generic_llm_api_client/releases/tag/v0.5.1
 [v0.5.0]: https://github.com/RISE-UNIBAS/generic_llm_api_client/releases/tag/v0.5.0

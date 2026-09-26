@@ -5,9 +5,11 @@ This module provides common utilities like retry logic, rate limiting,
 and error handling for LLM API interactions.
 """
 
-import time
+import json
 import logging
-from typing import Callable, TypeVar, Optional
+import math
+import time
+from typing import Callable, Optional, Tuple, TypeVar
 from functools import wraps
 
 T = TypeVar("T")
@@ -248,10 +250,179 @@ def billed_cost(source) -> Optional[float]:
     if source is None:
         return None
 
-    value = source.get("cost") if isinstance(source, dict) else getattr(source, "cost", None)
+    return _number(_field(source, "cost"))
+
+
+def billed_components(source) -> Optional[Tuple[float, float]]:
+    """
+    Return the input and output parts of a billed cost, if the provider itemised it.
+
+    OpenRouter reports the upstream prompt and completion costs beside its total. They are
+    taken only when they account for the total exactly: a per-request fee (an image or
+    request charge) belongs to neither, and splitting it between them would invent an
+    attribution the provider did not make. A bring-your-own-key route is skipped too,
+    since its total is OpenRouter's fee alone and the upstream figures describe a bill
+    paid elsewhere.
+
+    Args:
+        source: A usage object or mapping from any provider
+
+    Returns:
+        (input_cost_usd, output_cost_usd), or None if the total cannot be split
+    """
+    if source is None:
+        return None
+
+    total = billed_cost(source)
+    if total is None or _field(source, "is_byok") is True:
+        return None
+
+    details = _field(source, "cost_details")
+    prompt_cost = _number(_field(details, "upstream_inference_prompt_cost"))
+    completion_cost = _number(_field(details, "upstream_inference_completions_cost"))
+    if prompt_cost is None or completion_cost is None:
+        return None
+
+    if not math.isclose(prompt_cost + completion_cost, total, rel_tol=1e-9, abs_tol=1e-12):
+        return None
+    return prompt_cost, completion_cost
+
+
+def _field(source, name):
+    """Read a field from a mapping or an object, whichever the provider returned."""
+    if source is None:
+        return None
+    return source.get(name) if isinstance(source, dict) else getattr(source, name, None)
+
+
+def _number(value) -> Optional[float]:
+    """
+    Return value as a float if it is a real number, else None.
+
+    Checked by type rather than for None: the attribute exists on any mock object.
+    """
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
     return None
+
+
+# Keywords that make an object a JSON Schema rather than an instance of one.
+_SCHEMA_KEYWORDS = ("$defs", "definitions", "$schema", "properties")
+
+
+def schema_instruction(schema: dict) -> str:
+    """
+    Return the prompt text asking for JSON that conforms to a schema.
+
+    Worded to ask for an instance filled with values: asked for JSON "matching this
+    schema", some models answer with the schema itself, which parses and validates
+    against a model whose fields are optional while carrying no data at all.
+
+    Args:
+        schema: JSON Schema of the expected response
+
+    Returns:
+        Text to append to the user's prompt
+    """
+    return (
+        "\n\nRespond with a single JSON object containing your answer. The object must be "
+        "an instance of the JSON Schema below: fill in the actual values, and do not "
+        f"repeat the schema itself.\nJSON Schema: {json.dumps(schema)}"
+    )
+
+
+def json_schema_of(response_format) -> Optional[dict]:
+    """Return the JSON Schema of a Pydantic model class, v2 or v1, or None."""
+    for method in ("model_json_schema", "schema"):
+        if hasattr(response_format, method):
+            try:
+                schema = getattr(response_format, method)()
+            except Exception:
+                return None
+            return schema if isinstance(schema, dict) else None
+    return None
+
+
+def rejects_schema_echo(data, response_format):
+    """
+    Return data, or None if it is the requested schema echoed back rather than an answer.
+
+    Such a response parses as JSON and validates against a model whose fields are
+    optional, so it would otherwise pass as an answer carrying no data.
+
+    Args:
+        data: Parsed JSON response
+        response_format: Pydantic model class that was requested
+
+    Returns:
+        data unchanged, or None if it was a schema echo
+    """
+    if data and response_format and is_schema_echo(data, json_schema_of(response_format)):
+        logger.warning(
+            "Response is the requested JSON Schema echoed back, not an instance of it; "
+            "treating it as a failed parse."
+        )
+        return None
+    return data
+
+
+def is_schema_echo(data, schema: Optional[dict]) -> bool:
+    """
+    Tell whether a parsed response is the requested schema echoed back, not an answer.
+
+    Recognised by schema keywords at the top level that the schema does not declare as
+    fields of its own, in any branch of a union.
+
+    Args:
+        data: Parsed JSON response
+        schema: JSON Schema that was requested
+
+    Returns:
+        True if the response looks like a schema rather than an instance of it
+    """
+    if not isinstance(data, dict) or not isinstance(schema, dict):
+        return False
+
+    declared = _declared_fields(schema, schema, set())
+    return any(key in data and key not in declared for key in _SCHEMA_KEYWORDS)
+
+
+def _declared_fields(node, root: dict, seen: set) -> set:
+    """
+    Collect the top-level field names a schema allows, wherever it declares them.
+
+    Pydantic puts a recursive model's fields behind a $ref, and a union's behind
+    anyOf/oneOf branches (allOf for combined ones), so each is followed. A ref that
+    cannot be resolved, or has already been visited, contributes nothing.
+
+    Args:
+        node: Schema node to read
+        root: Whole schema, against which local refs ("#/$defs/Name") resolve
+        seen: Refs already followed, guarding against cycles
+
+    Returns:
+        Names of the fields the node declares
+    """
+    if not isinstance(node, dict):
+        return set()
+
+    fields = node.get("properties")
+    declared = set(fields) if isinstance(fields, dict) else set()
+
+    ref = node.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/") and ref not in seen:
+        seen.add(ref)
+        target = root
+        for part in ref[2:].split("/"):
+            target = target.get(part) if isinstance(target, dict) else None
+        declared |= _declared_fields(target, root, seen)
+
+    for combinator in ("anyOf", "oneOf", "allOf"):
+        branches = node.get(combinator)
+        if isinstance(branches, list):
+            for branch in branches:
+                declared |= _declared_fields(branch, root, seen)
+    return declared
 
 
 def usage_of(payload):

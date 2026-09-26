@@ -18,7 +18,7 @@ from openai import OpenAI
 
 from .base_client import BaseAIClient
 from .response import DiscardedAttempts, LLMResponse, Usage
-from .pricing import apply_costs, calculate_cost_components
+from .pricing import calculate_cost_components, record_costs
 from .reasoning import uncounted_reasoning
 from .utils import (
     attach_discarded,
@@ -27,6 +27,8 @@ from .utils import (
     error_payload,
     extract_json_from_text,
     rejects_parameter,
+    rejects_schema_echo,
+    schema_instruction,
     usage_counts,
     usage_of,
 )
@@ -353,7 +355,7 @@ class OpenAIClient(BaseAIClient):
                 schema_dict = None
 
             if schema_dict:
-                schema_prompt = f"\n\nYou MUST respond with valid JSON matching this exact schema: {json.dumps(schema_dict)}"
+                schema_prompt = schema_instruction(schema_dict)
 
                 # Find the last user message and append the schema prompt
                 last_user_idx = None
@@ -595,10 +597,7 @@ class OpenAIClient(BaseAIClient):
             provider=self.PROVIDER_ID,
             model=model,
         )
-        billed = billed_cost(getattr(raw_response, "usage", None))
-        if billed is not None:
-            usage.estimated_cost_usd = billed
-        apply_costs(usage, self.PROVIDER_ID, model)
+        record_costs(usage, getattr(raw_response, "usage", None), self.PROVIDER_ID, model)
 
     def _parse_structured(self, params: dict, model: str):
         """
@@ -939,6 +938,8 @@ class OpenAIClient(BaseAIClient):
         is_pydantic = response_format and (
             hasattr(response_format, "model_json_schema") or hasattr(response_format, "schema")
         )
+        if is_pydantic:
+            extracted_json = rejects_schema_echo(extracted_json, response_format)
 
         if is_pydantic and extracted_json:
             try:

@@ -33,7 +33,7 @@ class PythonFunctionExecutor(ToolExecutor):
             from ..utils import ToolExecutionError
 
             raise ToolExecutionError(
-                f"Python function executor requires 'module' and 'function' fields"
+                "Python function executor requires 'module' and 'function' fields"
             )
 
         try:

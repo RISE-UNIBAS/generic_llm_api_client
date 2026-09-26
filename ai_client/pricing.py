@@ -10,6 +10,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, NamedTuple, Optional, Tuple
 
+from .utils import billed_components, billed_cost
+
 if TYPE_CHECKING:  # avoids importing a sibling module at runtime
     from .response import Usage
 
@@ -311,15 +313,45 @@ def calculate_cost_components(
     )
 
 
+def record_costs(usage: "Usage", source, provider: str, model: str) -> None:
+    """
+    Fill a Usage object's cost fields, preferring what the provider billed, in place.
+
+    A billed total is kept as reported and never repriced: OpenRouter routes are unpinned,
+    one model name maps to many backends at different prices, so the provider's own figure
+    is the only accurate one and a list price would replace a fact with an estimate. Its
+    input and output parts are recorded only where the provider itemised them exactly.
+    Without a billed total, costs come from list prices.
+
+    Args:
+        usage: Usage to fill; reasoning_tokens must already be set
+        source: The provider's usage object or mapping, which may carry a billed cost
+        provider: Provider ID, used for the pricing lookup
+        model: Model identifier as requested, not as the response echoed it
+    """
+    billed = billed_cost(source)
+    if billed is None:
+        apply_costs(usage, provider, model)
+        return
+
+    # apply_costs is deliberately not called here: it would reprice a total that has
+    # components beside it. Components already on the usage are cleared first, so an
+    # earlier estimate never sits beside the billed total.
+    usage.estimated_cost_usd = billed
+    usage.input_cost_usd = usage.output_cost_usd = usage.reasoning_cost_usd = None
+    components = billed_components(source)
+    if components is not None:
+        usage.input_cost_usd, usage.output_cost_usd = components
+
+
 def apply_costs(usage: "Usage", provider: str, model: str) -> None:
     """
     Fill a Usage object's cost fields from list prices, in place.
 
-    A cost the provider billed directly is left alone. Such a total arrives with no
-    component costs beside it, which is how it is recognised here: OpenRouter routes are
-    unpinned, one model name maps to many backends at different prices, so the provider's
-    own figure is the only accurate one and a list price would replace a fact with an
-    estimate.
+    A total already present with no component costs beside it is taken to be one the
+    provider billed and is left alone. record_costs is the entry point that handles
+    billed costs, including itemised ones; this check keeps a direct caller from
+    overwriting a billed total.
 
     Costs stay None where the model is not in the pricing table, and reasoning cost stays
     None where the reasoning count itself is unknown.

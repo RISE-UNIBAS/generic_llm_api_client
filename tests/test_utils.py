@@ -5,11 +5,16 @@ Tests for utility functions.
 import pytest
 import time
 from types import SimpleNamespace
+from typing import Optional
 from unittest.mock import Mock
 from ai_client.response import DiscardedAttempts
 from ai_client.utils import (
     attach_discarded,
+    billed_components,
     billed_cost,
+    is_schema_echo,
+    rejects_schema_echo,
+    schema_instruction,
     error_payload,
     output_reported,
     usage_of,
@@ -333,6 +338,179 @@ class TestBilledCost:
     def test_placeholder_attribute_is_not_a_cost(self):
         """Test an auto-created attribute is not mistaken for a billed figure."""
         assert billed_cost(Mock()) is None
+
+
+# The usage block of a real OpenRouter response (qwen/qwen3.5-9b, served by Venice).
+OPENROUTER_USAGE = {
+    "prompt_tokens": 2725,
+    "completion_tokens": 4317,
+    "total_tokens": 7042,
+    "completion_tokens_details": {"reasoning_tokens": 1962},
+    "cost": 0.00092005,
+    "is_byok": False,
+    "cost_details": {
+        "upstream_inference_cost": 0.00092005,
+        "upstream_inference_prompt_cost": 0.0002725,
+        "upstream_inference_completions_cost": 0.00064755,
+    },
+}
+
+
+def _openrouter_usage(**changes):
+    """Return a copy of the OpenRouter usage block with fields replaced."""
+    usage = {**OPENROUTER_USAGE, "cost_details": dict(OPENROUTER_USAGE["cost_details"])}
+    details = changes.pop("cost_details", None)
+    if details is not None:
+        usage["cost_details"].update(details)
+    usage.update(changes)
+    return usage
+
+
+class TestBilledComponents:
+    """Tests for splitting a billed cost into what the provider itemised."""
+
+    def test_itemised_cost_is_split(self):
+        """Test the prompt and completion costs are read when they make up the total."""
+        assert billed_components(OPENROUTER_USAGE) == (0.0002725, 0.00064755)
+
+    def test_itemised_cost_is_read_from_an_object(self):
+        """Test the usage object may be an attribute-style object holding a dict."""
+        usage = SimpleNamespace(**OPENROUTER_USAGE)
+
+        assert billed_components(usage) == (0.0002725, 0.00064755)
+
+    def test_split_short_of_the_total_is_not_used(self):
+        """Test a per-request fee belonging to neither part leaves both unknown."""
+        usage = _openrouter_usage(
+            cost=0.00092005 + 0.000765, cost_details={"upstream_inference_cost": None}
+        )
+
+        assert billed_components(usage) is None
+
+    def test_bring_your_own_key_is_not_split(self):
+        """Test a BYOK total, OpenRouter's fee alone, is not paired with upstream costs."""
+        assert billed_components(_openrouter_usage(is_byok=True)) is None
+
+    def test_missing_details_are_not_split(self):
+        """Test older responses without cost_details yield no split."""
+        usage = _openrouter_usage()
+        del usage["cost_details"]
+
+        assert billed_components(usage) is None
+
+    def test_one_missing_figure_is_not_split(self):
+        """Test a split needs both parts."""
+        usage = _openrouter_usage(cost_details={"upstream_inference_completions_cost": None})
+
+        assert billed_components(usage) is None
+
+    def test_no_billed_total_is_not_split(self):
+        """Test components without a total to account for are ignored."""
+        usage = _openrouter_usage()
+        del usage["cost"]
+
+        assert billed_components(usage) is None
+        assert billed_components(None) is None
+
+    def test_placeholder_attributes_are_not_a_split(self):
+        """Test auto-created attributes on a mock are not mistaken for figures."""
+        usage = Mock()
+        usage.cost = 0.01
+
+        assert billed_components(usage) is None
+
+
+class TestSchemaEcho:
+    """Tests for recognising a response that repeats the requested schema."""
+
+    @staticmethod
+    def _model():
+        from pydantic import BaseModel
+
+        class Author(BaseModel):
+            name: Optional[str] = None
+            born: Optional[int] = None
+
+        return Author
+
+    def test_instruction_asks_for_an_instance(self):
+        """Test the prompt asks for values rather than the schema."""
+        text = schema_instruction({"type": "object"})
+
+        assert "instance" in text
+        assert "do not repeat the schema" in text
+        assert '{"type": "object"}' in text
+
+    def test_echoed_schema_is_recognised(self):
+        """Test the schema itself, which validates against optional fields, is caught."""
+        model = self._model()
+
+        assert is_schema_echo(model.model_json_schema(), model.model_json_schema())
+        assert rejects_schema_echo(model.model_json_schema(), model) is None
+
+    def test_nested_definitions_are_recognised(self):
+        """Test an echo leading with $defs is caught."""
+        assert is_schema_echo({"$defs": {"Author": {}}}, {"properties": {"name": {}}})
+
+    def test_real_answer_passes(self):
+        """Test an instance of the schema is returned unchanged."""
+        answer = {"name": "Euler", "born": 1707}
+
+        assert rejects_schema_echo(answer, self._model()) == answer
+
+    def test_field_named_like_a_keyword_passes(self):
+        """Test a schema declaring a 'properties' field accepts it in an answer."""
+        schema = {"type": "object", "properties": {"properties": {"type": "array"}}}
+
+        assert not is_schema_echo({"properties": []}, schema)
+
+    def test_recursive_model_field_named_like_a_keyword_passes(self):
+        """Test fields behind a recursive model's top-level $ref count as declared."""
+        from typing import List
+
+        from pydantic import BaseModel
+
+        class Node(BaseModel):
+            properties: Optional[List[str]] = None
+            child: Optional["Node"] = None
+
+        answer = {"properties": ["a"], "child": None}
+
+        assert rejects_schema_echo(answer, Node) == answer
+        assert rejects_schema_echo(Node.model_json_schema(), Node) is None
+
+    def test_union_branch_field_named_like_a_keyword_passes(self):
+        """Test fields declared in one branch of a union count as declared."""
+        from typing import List, Union
+
+        from pydantic import BaseModel, RootModel
+
+        class Building(BaseModel):
+            properties: List[str]
+
+        class Person(BaseModel):
+            name: str
+
+        class Entity(RootModel[Union[Building, Person]]):
+            pass
+
+        answer = {"properties": ["listed"]}
+
+        assert rejects_schema_echo(answer, Entity) == answer
+        assert rejects_schema_echo(Entity.model_json_schema(), Entity) is None
+
+    def test_unresolvable_ref_falls_back_to_the_top_level(self):
+        """Test a dangling or cyclic $ref neither raises nor hides an echo."""
+        assert is_schema_echo({"properties": {}}, {"$ref": "#/$defs/Missing"})
+        assert is_schema_echo(
+            {"$defs": {}}, {"$ref": "#/$defs/A", "$defs": {"A": {"$ref": "#/$defs/A"}}}
+        )
+
+    def test_non_objects_are_not_echoes(self):
+        """Test lists and missing schemas never count as echoes."""
+        assert not is_schema_echo([{"properties": {}}], {"type": "array"})
+        assert not is_schema_echo({"properties": {}}, None)
+        assert rejects_schema_echo(None, self._model()) is None
 
 
 class TestErrorPayload:

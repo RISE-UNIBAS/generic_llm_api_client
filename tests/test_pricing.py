@@ -2,7 +2,12 @@
 Tests for cost calculation.
 """
 
-from ai_client.pricing import apply_costs, calculate_cost, calculate_cost_components
+from ai_client.pricing import (
+    apply_costs,
+    calculate_cost,
+    calculate_cost_components,
+    record_costs,
+)
 from ai_client.response import Usage
 
 # Round numbers so an expected cost is obvious: 1 USD per million in, 10 per million out.
@@ -142,3 +147,88 @@ class TestApplyCosts:
         assert usage.input_cost_usd is None
         assert usage.output_cost_usd is None
         assert usage.estimated_cost_usd is None
+
+
+def _priced_usage():
+    """Return usage for a million tokens each way, which the table prices at $11."""
+    return Usage(
+        input_tokens=MILLION, output_tokens=MILLION, total_tokens=2 * MILLION, reasoning_tokens=0
+    )
+
+
+class TestRecordCosts:
+    """Tests for record_costs, which prefers a billed cost over list prices."""
+
+    BILLED = {
+        "cost": 0.00092005,
+        "cost_details": {
+            "upstream_inference_prompt_cost": 0.0002725,
+            "upstream_inference_completions_cost": 0.00064755,
+        },
+    }
+
+    def test_itemised_billed_cost_survives_a_different_list_price(self, stub_pricing):
+        """
+        Test the billed total and its parts are kept though the table prices the model.
+
+        The table must hold a price for the model: without one, a repricing would find
+        nothing to apply and the test would pass for the wrong reason.
+        """
+        stub_pricing(TABLE)
+        usage = _priced_usage()
+
+        record_costs(usage, self.BILLED, "genai", "test-model")
+
+        assert usage.estimated_cost_usd == 0.00092005
+        assert usage.input_cost_usd == 0.0002725
+        assert usage.output_cost_usd == 0.00064755
+        assert usage.reasoning_cost_usd is None
+
+    def test_unitemised_billed_cost_survives(self, stub_pricing):
+        """Test a bare billed total is kept and its parts stay unknown."""
+        stub_pricing(TABLE)
+        usage = _priced_usage()
+
+        record_costs(usage, {"cost": 0.0123}, "genai", "test-model")
+
+        assert usage.estimated_cost_usd == 0.0123
+        assert usage.input_cost_usd is None
+        assert usage.output_cost_usd is None
+
+    def test_billed_cost_clears_earlier_components(self, stub_pricing):
+        """Test components from an earlier pricing never sit beside a billed total."""
+        stub_pricing(TABLE)
+        usage = _priced_usage()
+        usage.reasoning_tokens = MILLION
+        apply_costs(usage, "genai", "test-model")
+
+        record_costs(usage, {"cost": 0.0123}, "genai", "test-model")
+
+        assert usage.estimated_cost_usd == 0.0123
+        assert usage.input_cost_usd is None
+        assert usage.output_cost_usd is None
+        assert usage.reasoning_cost_usd is None
+
+    def test_itemised_billed_cost_replaces_earlier_components(self, stub_pricing):
+        """Test an itemised bill replaces earlier parts and clears reasoning cost."""
+        stub_pricing(TABLE)
+        usage = _priced_usage()
+        usage.reasoning_tokens = MILLION
+        apply_costs(usage, "genai", "test-model")
+
+        record_costs(usage, self.BILLED, "genai", "test-model")
+
+        assert usage.input_cost_usd == 0.0002725
+        assert usage.output_cost_usd == 0.00064755
+        assert usage.reasoning_cost_usd is None
+        assert usage.estimated_cost_usd == 0.00092005
+
+    def test_list_prices_apply_without_a_billed_cost(self, stub_pricing):
+        """Test a provider reporting no cost is priced from the table."""
+        stub_pricing(TABLE)
+        usage = _priced_usage()
+
+        record_costs(usage, {"prompt_tokens": MILLION}, "genai", "test-model")
+
+        assert usage.input_cost_usd == 1.0
+        assert usage.estimated_cost_usd == 11.0
