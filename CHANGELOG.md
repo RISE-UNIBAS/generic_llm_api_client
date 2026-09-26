@@ -7,59 +7,56 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [v0.5.0] - 2026-09-25
 
-A cost accounting release. The library tracked tokens and cost, but discarded several things
-providers had already billed for: reasoning tokens, attempts thrown away by a fallback, and
-the usage of any request that failed. Reasoning was the largest gap — on a reasoning model it
-can be the majority of a response, so cost was understated several-fold.
+This release extends cost accounting to include previously omitted reasoning tokens,
+discarded fallback attempts, and usage from failed requests. Reasoning tokens accounted
+for the largest omission and could cause costs to be understated by several times.
 
 ### Added
 
 - `Usage.reasoning_tokens` and `Usage.reasoning_cost_usd`. `reasoning_tokens` counts only
   reasoning a provider billed *outside* `output_tokens`, so
   `input_tokens + output_tokens + reasoning_tokens == total_tokens` holds wherever a total
-  was reported. `None` means no total was reported and the provider told us nothing, which
-  is deliberately distinct from `0`.
+  was reported. `None` means no total was reported, so the uncounted reasoning is unknown;
+  this remains distinct from `0`.
 - `Usage.attempts`, `Usage.discarded_input_tokens`, `Usage.discarded_output_tokens`,
   `Usage.discarded_reasoning_tokens` and `Usage.discarded_cost_usd`, recording attempts that
   were billed but whose responses were not returned. They are reported beside the successful
   response and never folded into its own counts, and the token components account for the
   cost exactly as they do for a successful call.
-- `ai_client.reasoning`, holding the single definition of the reasoning derivation, so every
-  provider is measured the same way. A provider's own reasoning figure disagreeing with the
-  derived gap is logged as a warning rather than silently resolved.
+- `ai_client.reasoning`, providing a shared reasoning-token calculation across
+  providers. Discrepancies between reported reasoning counts and the derived gap
+  are logged as warnings.
 - `pricing.calculate_cost_components` and `CostComponents`, pricing reasoning at the output
   rate, plus `pricing.apply_costs`, which fills a `Usage` in place.
 - `utils.usage_counts` and `utils.usage_from_error`, recovering token counts from a provider
   usage object or from a failed request's exception.
 - Request parameters are adapted to what a model accepts, so a caller can pass the same
-  settings to every model. The whole gpt-5 series needs `max_completion_tokens` in place
-  of `max_tokens`; gpt-5, its mini and nano sizes and the o-series accept only their
-  default temperature, while gpt-5.1 and newer honour one; and newer Claude models have
-  retired `temperature` altogether and reject it outright. The two rules are kept
+  settings to every model. The gpt-5 series requires `max_completion_tokens` in place
+  of `max_tokens`; gpt-5, its mini and nano variants and the o-series accept only their
+  default temperature, while gpt-5.1 and newer accept a temperature setting. Newer Claude
+  models have removed `temperature` support and reject the parameter. The two rules are kept
   separate, because discarding a temperature a model would have honoured silently
-  changes sampling. Known families are corrected before the call, and anything else
-  recovers by retrying once when the provider refuses a parameter, so a model released
-  after this version still works.
+  changes sampling. Known families are corrected before the call, and other parameter
+  rejections trigger one retry with adjusted settings. This also supports model families
+  not explicitly listed in the client.
 
 ### Changed
 
 - **`estimated_cost_usd` now covers input, output and reasoning.** It previously covered
   input and output only. Input plus output remains available as
   `input_cost_usd + output_cost_usd`.
-- Cost is priced on the **requested** model rather than the id the response echoed back.
-  Routers normalise or rewrite model ids, and a rewritten id misses the pricing table; this
-  zeroed 7,922 of 7,996 stored HuggingFace requests. The *recorded* `LLMResponse.model` is
-  unchanged and still reports what actually answered.
+- Cost is calculated using the **requested** model ID rather than the ID returned by the provider.
+  Routers normalise or rewrite model ids, and a rewritten ID may not match the pricing table; this
+  resulted in missing costs for 7,922 of 7,996 stored HuggingFace requests. The *recorded* `LLMResponse.model` is
+  unchanged and retains the model ID returned by the provider.
 - HuggingFace cost now resolves for a **provider-pinned** model id such as
   `swiss-ai/Apertus-v1.5-8B:publicai`. A bare router id still yields `None`, because it
   routes to whichever partner is fastest and has no single price.
-- Failed requests report whatever usage the failure carried, instead of all zeros.
-- A cost the provider billed directly is never recalculated. Such a total arrives with no
-  component costs beside it, which is how it is recognised; OpenRouter routes are unpinned,
-  so the provider's own figure is the only accurate one. This holds on every response path
-  rather than only plain chat completions, and on failure paths too: a billed cost on a
-  failed request, or on an attempt a fallback discarded, is preserved rather than replaced
-  by a list-price estimate.
+- Failed requests preserve available usage from the error payload.
+- Provider-billed costs are preserved across successful responses, failed requests, and
+  discarded fallback attempts. These totals are identified by the absence of component
+  costs. Routed requests can use backends with different prices, so the provider's billed
+  amount takes precedence over a list-price estimate.
 
 ### Fixed
 
@@ -76,36 +73,36 @@ can be the majority of a response, so cost was understated several-fold.
 - The structured-output fallback lost the first attempt's tokens entirely. Both the OpenAI
   `.parse()` fallback and the Claude dropped-tool retry now report them. The response body
   is read before the SDK validates it, so the tokens survive a content filter or a schema
-  mismatch as well -- those raise exceptions carrying nothing, though the request was
-  billed like any other.
+  mismatch as well -- these may raise exceptions without usage data even when the
+  request was billed.
 - A tool-calling request whose second call failed discarded the first call's usage and cost
   along with it.
 - A response that arrived and was billed but then failed local conversion, such as one
   carrying malformed tool arguments, became an error response reporting zero tokens. The
-  request is paid for by that point, so its usage is now recorded, together with any
-  earlier attempt the same request had already thrown away. This applies to every
+  billed usage is now recorded together with usage from any earlier discarded attempts
+  within the same request. This applies to every
   provider, not only the OpenAI-compatible ones.
 - The OpenRouter billed-cost branch was selected with `hasattr`, so a `cost` of `None`
   counted as a billed total and every mocked usage object took the branch.
-- DeepSeek images are no longer dropped for `deepseek-flash`, which accepts them despite
-  its name matching no known vision fragment. The fragment list can be extended per
-  client with the `vision_model_keywords` setting, so a new vision model no longer needs
-  a release.
+- DeepSeek images are no longer dropped for `deepseek-flash`, which accepts them although
+  its name does not match the existing vision-model keywords. The fragment list can be extended per
+  client with the `vision_model_keywords` setting, allowing support for additional vision models
+  without a library release.
 - Listing models no longer fails for providers that report no creation timestamp.
-  DeepSeek returns None, which raised TypeError and lost the entire catalogue.
-- Token counts are stored as integers whatever a provider reports. Cohere returns whole
-  numbers as floats, which reached stored records as `187.0` and made its counts
-  unreadable to the usage recovery.
-- `pyproject.toml` and `ai_client/__init__.py` no longer disagree. 0.4.6 shipped reporting
+  DeepSeek returns `None`, which previously raised `TypeError` and prevented model listing.
+- Token counts are stored as integers regardless of the numeric type returned by the provider. Cohere returns whole
+  numbers as floats, which reached stored records as `187.0` and prevented the usage-recovery code
+  from reading those counts.
+- `pyproject.toml` and `ai_client/__init__.py` now report the same version. Version 0.4.6 reported
   `0.4.5` from `ai_client.__version__`.
 
 ### Notes for consumers
 
 - The new field names are fixed from this release on; consumers rebuilding `Usage` from an
-  explicit field list need to learn them or the values will be dropped on reload.
-- Anything that fills a missing cost component must leave a provider-billed total alone.
+  explicit field list must include them to preserve the values on reload.
+- Code that fills missing cost components must preserve provider-billed totals.
   Where components exist they sum to the total; where a billed total exists without
-  components, it stands as it is.
+  components, it remains unchanged.
 - Discarded-attempt totals cover the final attempt of a request. The retry wrapper re-enters
   the provider call on failure, and the accumulator starts fresh each time.
 

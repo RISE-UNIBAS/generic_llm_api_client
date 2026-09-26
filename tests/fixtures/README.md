@@ -4,14 +4,14 @@ This directory contains test images for integration tests.
 
 ## Required Test Images
 
-For running integration tests, you'll need sample images. You can:
+Integration tests use sample images from either of the following sources:
 
-1. **Use the auto-generated images**: The conftest.py will automatically create temporary test images when running tests
-2. **Add your own images**: Place test images here for specific test cases
+1. **Generated images**: Fixtures in `conftest.py` create temporary images during test execution
+2. **Custom images**: Add images to this directory for specific test cases
 
 ## Sample Images for Manual Testing
 
-If you want to add permanent test images for integration testing:
+Create permanent test images for manual integration testing with the following command:
 
 ```bash
 # Example: Create simple test images with PIL
@@ -32,16 +32,15 @@ img.save('tests/fixtures/blue_circle.png')
 "
 ```
 
-## What's Automatically Generated
+## Automatically Generated Fixtures
 
-The `conftest.py` fixture automatically creates:
-- **sample_image_path**: A temporary 100x100 red square PNG for each test
-- Cleaned up automatically after tests complete
+The `sample_image_path` fixture in `conftest.py` creates a temporary 100x100 red square
+PNG for each test and removes it after the test completes.
 
 ## For Humanities Benchmarks
 
 When testing with real humanities data:
 - Place sample manuscript images here
 - Use diverse samples (different scripts, languages, conditions)
-- Keep file sizes reasonable (< 5MB each)
+- Keep each image smaller than 5 MB
 - Document what each image tests

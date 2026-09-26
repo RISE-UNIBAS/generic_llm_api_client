@@ -12,7 +12,8 @@ This repository uses GitHub Actions to:
 
 ### 1. Configure PyPI Trusted Publishing
 
-Modern PyPI uses "Trusted Publishers" instead of API tokens. This is more secure and doesn't require storing secrets.
+This workflow uses PyPI Trusted Publishing to authenticate GitHub Actions through OIDC
+without storing a PyPI API token.
 
 #### Steps:
 
@@ -27,7 +28,7 @@ Modern PyPI uses "Trusted Publishers" instead of API tokens. This is more secure
 
 3. **Click "Add"**
 
-That's it! No API tokens needed. GitHub Actions will authenticate automatically using OIDC.
+GitHub Actions can then authenticate automatically using OIDC.
 
 ### 2. Optional: Set up Codecov (for coverage reports)
 
@@ -47,20 +48,20 @@ The test workflow (`.github/workflows/tests.yml`) runs automatically on:
 - Every push to `main`, `master`, or `develop` branches
 - Every pull request
 
-### What it does:
+### Workflow Checks
 
-- ✅ Tests on **3 operating systems**: Ubuntu, Windows, macOS
-- ✅ Tests on **4 Python versions**: 3.9, 3.10, 3.11, 3.12
-- ✅ Runs **unit tests only** (no API calls, no cost)
-- ✅ Generates **coverage reports**
-- ✅ Checks **code formatting** (black)
-- ✅ Runs **linting** (ruff)
+- Tests on **3 operating systems**: Ubuntu, Windows, macOS
+- Tests on **4 Python versions**: 3.9, 3.10, 3.11, 3.12
+- Runs **unit tests only** (no API calls, no cost)
+- Generates **coverage reports**
+- Checks **code formatting** (black)
+- Runs **linting** (ruff)
 
-### Viewing test results:
+### Viewing Test Results
 
 Go to: https://github.com/RISE-UNIBAS/generic_llm_api_client/actions
 
-Each commit will show a green checkmark ✅ or red X ❌.
+Each commit displays a status indicating whether its checks passed or failed.
 
 ## Publishing to PyPI
 
@@ -70,14 +71,21 @@ Publishing happens automatically when you create a GitHub release:
 
 #### Steps:
 
-1. **Update version** in `pyproject.toml`:
+1. **Update version** in **both** `pyproject.toml` and `ai_client/__init__.py`. Updating
+   both keeps `pip show` and `ai_client.__version__` consistent.
+   `tests/test_version.py` checks that the versions match.
    ```toml
+   # pyproject.toml
    version = "0.1.1"  # Increment version number
+   ```
+   ```python
+   # ai_client/__init__.py
+   __version__ = "0.1.1"
    ```
 
 2. **Commit and push**:
    ```bash
-   git add pyproject.toml
+   git add pyproject.toml ai_client/__init__.py
    git commit -m "Bump version to 0.1.1"
    git push
    ```
@@ -111,7 +119,7 @@ Publishing happens automatically when you create a GitHub release:
 
 ### Manual Publishing (If Needed)
 
-If you need to publish manually for some reason:
+To publish manually:
 
 ```bash
 # 1. Install build tools
@@ -154,13 +162,13 @@ Before creating a release:
 
 ### 1. Refresh the bundled pricing snapshot
 `ai_client/pricing.json` is a generated snapshot of the pricing data maintained in the
-public benchmark repo (`RISE-UNIBAS/humanities_data_benchmark`, `scripts/data/pricing.json`),
+public benchmark repository (`RISE-UNIBAS/humanities_data_benchmark`, `scripts/data/pricing.json`),
 which is the single source of truth. Refresh it before every release:
 ```bash
 python scripts/update_pricing.py            # fetch and overwrite ai_client/pricing.json
 python scripts/update_pricing.py --dry-run  # preview only
 ```
-Do not hand-edit `ai_client/pricing.json`; make pricing changes in the benchmark repo, and
+Do not manually edit `ai_client/pricing.json`; make pricing changes in the benchmark repository, and
 the library never fetches pricing at runtime. Commit the refreshed file with the release.
 
 ### 2. Run tests locally
@@ -176,9 +184,8 @@ pytest -m integration
 ```
 
 ### 3. Update version number
-Two files carry the version and **both** must be bumped, or `pip show` and
-`ai_client.__version__` disagree for everyone who installs the release (0.4.6 shipped that
-way):
+Update the version in **both** files to keep package metadata and
+`ai_client.__version__` consistent. Version 0.4.6 contained a mismatch:
 ```toml
 # pyproject.toml
 version = "0.1.1"  # Increment appropriately
@@ -210,7 +217,7 @@ git add pyproject.toml ai_client/__init__.py CHANGELOG.md ai_client/pricing.json
 git commit -m "Bump version to 0.1.1"
 git push
 ```
-Wait for CI to pass on the pushed commit before going on.
+Wait for CI to pass on the pushed commit before creating the release.
 
 ### 6. Create GitHub release
 ```bash
@@ -219,20 +226,20 @@ gh release create v0.1.1 \
   --target "$(git rev-parse HEAD)" \
   --notes-file CHANGELOG.md
 ```
-`gh release create` with a tag that does not exist yet creates it **on the remote's default
-branch as the remote currently has it**. Running this with the release commit still local
-would publish the previous version's code under the new name, to PyPI, irreversibly. Either
-push first and pass `--target`, or push the tag yourself beforehand.
+`gh release create` creates a missing tag on the remote default branch unless a target is
+specified. Push the release commit and pass `--target`, or push the tag before creating the
+release. Otherwise, the release may publish an earlier commit under the new version number,
+which cannot be overwritten on PyPI.
 
 ### 7. Monitor the workflow
 Watch: https://github.com/RISE-UNIBAS/generic_llm_api_client/actions
 
 You should see:
-1. ✅ Build distribution
-2. ✅ Publish to PyPI
-3. ✅ Upload artifacts to release
+1. Build distribution
+2. Publish to PyPI
+3. Upload artifacts to release
 
-### 7. Verify publication
+### 8. Verify publication
 Check: https://pypi.org/project/generic-llm-api-client/
 
 Test installation:
@@ -244,7 +251,7 @@ pip install --upgrade generic-llm-api-client
 
 ### "Trusted publisher configuration does not match"
 
-**Problem**: PyPI rejects the publish because settings don't match.
+**Problem**: PyPI rejects the publish because settings do not match.
 
 **Solution**: Check that PyPI trusted publisher settings match exactly:
 - Repository owner: `RISE-UNIBAS`
@@ -254,9 +261,9 @@ pip install --upgrade generic-llm-api-client
 
 ### "Version already exists"
 
-**Problem**: You're trying to publish a version that's already on PyPI.
+**Problem**: The version already exists on PyPI.
 
-**Solution**: You can't overwrite PyPI versions. Increment the version number:
+**Solution**: PyPI versions cannot be overwritten. Increment the version number:
 ```toml
 version = "0.1.2"  # New version
 ```
@@ -298,13 +305,13 @@ gh release create v0.1.1
 ```
 
 ### 2. Use descriptive release notes
-Bad:
+Insufficient detail:
 ```
 v0.1.1
 Bug fixes
 ```
 
-Good:
+Descriptive release notes:
 ```
 v0.1.1 - Improved Provider Support
 
@@ -330,11 +337,11 @@ Document all changes in CHANGELOG.md before releasing.
 ## Summary
 
 **Automated workflow:**
-1. Update version in `pyproject.toml`
+1. Update the version in `pyproject.toml` and `ai_client/__init__.py`
 2. Commit and push
 3. Create GitHub release (tag must be `v{version}`)
 4. Wait 1-2 minutes
-5. Package is on PyPI! 🎉
+5. Verify that the package is available on PyPI
 
 **Key URLs:**
 - Repository: https://github.com/RISE-UNIBAS/generic_llm_api_client

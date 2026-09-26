@@ -1,13 +1,13 @@
 # Integration Testing Guide
 
-This guide covers running **integration tests** that make real API calls to verify actual compatibility with LLM providers.
+This guide covers running **integration tests** that make real API calls to verify compatibility with LLM providers.
 
 ## Overview
 
 **Integration tests vs Unit tests:**
 
-- **Unit tests** (70+ tests): Mock all external APIs, test internal logic, run fast (~2s), no API keys needed
-- **Integration tests** (18+ tests): Make real API calls, verify actual compatibility, require API keys, cost money
+- **Unit tests** (70+ tests): Mock all external APIs, test internal logic, run in approximately 2 seconds, require no API keys
+- **Integration tests** (18+ tests): Make real API calls, verify compatibility, require API keys, incur provider charges
 
 ## Quick Start
 
@@ -44,17 +44,25 @@ OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 GOOGLE_API_KEY=AI...
 MISTRAL_API_KEY=...
+COHERE_API_KEY=...
 DEEPSEEK_API_KEY=...
-QWEN_API_KEY=...
+ALIBABA_API_KEY=...
+HUGGINGFACE_API_KEY=hf_...
+OPENROUTER_API_KEY=sk-or-...
+
+# sciCORE needs its endpoint and model as well as a key
+SCICORE_API_KEY=...
+SCICORE_BASE_URL=https://...
+SCICORE_MODEL=...
 ```
 
-**Note**: You don't need ALL keys. Tests automatically skip providers without keys.
+Configure keys only for the providers being tested. Tests skip providers without keys.
 
-### Security Warning
+### API Key Security
 
-⚠️ **Never commit `.env` to git!**
+Do not commit `.env` to version control.
 
-The `.env` file is already in `.gitignore`. Double-check:
+The `.env` file is already in `.gitignore`. Verify that it is excluded:
 
 ```bash
 git status  # Should NOT show .env
@@ -126,11 +134,13 @@ pytest
 
 **Providers tested:**
 - OpenAI (gpt-4o-mini)
-- Claude (claude-3-5-haiku-20241022)
-- Gemini (gemini-2.0-flash-exp)
+- Claude (claude-haiku-4-5)
+- Gemini (gemini-2.5-flash)
 - Mistral (mistral-small-latest)
+- Cohere (command-a-03-2025)
 - DeepSeek (deepseek-chat)
 - Qwen (qwen-turbo)
+- OpenRouter (openai/gpt-4o-mini)
 
 **Cost estimate:** ~$0.01-0.05 per full run
 
@@ -149,8 +159,8 @@ pytest -m integration tests/test_integration_basic.py
 
 **Providers tested:**
 - OpenAI (gpt-4o-mini)
-- Claude (claude-3-5-sonnet-20241022)
-- Gemini (gemini-2.0-flash-exp)
+- Claude (claude-sonnet-5)
+- Gemini (gemini-2.5-flash)
 - Mistral (pixtral-12b-2409)
 - DeepSeek (if vision supported)
 - Qwen (qwen-vl-max)
@@ -211,39 +221,39 @@ tests/test_integration_basic.py::TestMistralIntegration::test_mistral_basic_prom
 Reason: MISTRAL_API_KEY not set
 ```
 
-This is **normal** - you only need keys for providers you want to test.
+Skipped tests are expected when the corresponding provider keys are not configured.
 
 ### Failed Tests
 
 If a test fails, check:
 
-1. **API key valid?**
+1. **Verify the API key configuration.**
    ```bash
    echo $ANTHROPIC_API_KEY  # Check if set correctly
    ```
 
-2. **Correct model name?** Model names change over time. Check provider docs:
+2. **Verify the model name.** Model names change over time. Check provider docs:
    - OpenAI: https://platform.openai.com/docs/models
    - Anthropic: https://docs.anthropic.com/en/docs/models-overview
    - Gemini: https://ai.google.dev/models/gemini
 
-3. **Rate limits?** Wait a minute and retry:
+3. **Check for rate limits.** Wait a minute and retry:
    ```bash
    pytest -m integration --lf  # Re-run last failed
    ```
 
-4. **Insufficient credits?** Check your provider account balance
+4. **Check available credits.** Review the provider account balance
 
 ## Cost Management
 
 ### Minimize Costs
 
-**Use cheapest models:**
-```python
+**Use lower-cost models:**
+```
 # Already configured in tests
-OpenAI: gpt-4o-mini (~$0.00015 per 1K input tokens)
-Claude: claude-3-5-haiku-20241022 (~$0.00025 per 1K input tokens)
-Gemini: gemini-2.0-flash-exp (free tier available)
+OpenAI: gpt-4o-mini
+Claude: claude-haiku-4-5
+Gemini: gemini-2.5-flash
 Mistral: mistral-small-latest (~$0.0002 per 1K input tokens)
 ```
 
@@ -282,7 +292,7 @@ Use async batch processing to optimize costs and speed.
 
 ### Run in GitHub Actions (Optional)
 
-⚠️ **Integration tests cost money!** Only run if you set up billing.
+Integration tests incur provider charges. Configure billing before enabling this workflow.
 
 ```yaml
 name: Integration Tests
@@ -365,10 +375,10 @@ pip install -e ".[test]"
 
 Check `.env` file format (no quotes needed):
 ```bash
-# ❌ Wrong
+# Quoted value
 OPENAI_API_KEY="sk-..."
 
-# ✅ Correct
+# Unquoted value
 OPENAI_API_KEY=sk-...
 ```
 
@@ -382,7 +392,7 @@ print(os.getenv('OPENAI_API_KEY'))  # Should print your key
 
 ### Rate Limit Errors
 
-The client has built-in retry logic, but if you hit rate limits:
+The client has built-in retry logic, but if rate-limit errors persist:
 
 ```bash
 # Add delays between tests
@@ -410,7 +420,7 @@ If tests hang indefinitely:
 1. Check network connection
 2. Verify API keys are valid
 3. Check provider status pages
-4. Kill and retry: Ctrl+C, then `pytest --lf`
+4. Interrupt and retry: Ctrl+C, then `pytest --lf`
 
 ## Best Practices
 
@@ -494,22 +504,22 @@ class TestNewFeature:
 
 1. **Always mark with `@pytest.mark.integration`**
 2. **Always skip if API key missing**
-3. **Use cheapest models possible**
+3. **Use the lowest-cost models that meet the test requirements**
 4. **Keep prompts short** (to minimize costs)
-5. **Test real behavior**, not just "does it work"
+5. **Assert specific behavior and expected results**
 6. **Add print statements** for debugging (use `-s` flag to see them)
 
 ## Summary
 
 **Run integration tests to:**
-- ✅ Verify real API compatibility before release
-- ✅ Test new features with actual providers
-- ✅ Validate format assumptions
-- ✅ Simulate benchmark workflows
+- Verify real API compatibility before release
+- Test new features with actual providers
+- Validate format assumptions
+- Simulate benchmark workflows
 
-**Remember:**
+**Execution requirements:**
 - Unit tests (default): Fast, free, no API keys needed
-- Integration tests (explicit): Slow, costs money, requires API keys
+- Integration tests (explicit): Longer runtime, provider charges, API keys required
 - Only run integration tests when you need to verify real API behavior
 
 **Quick commands:**

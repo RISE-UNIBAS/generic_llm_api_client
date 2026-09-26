@@ -1,256 +1,108 @@
-# Test Suite for Generic LLM API Client
+# Test Suite
 
-This directory contains the test suite for the generic-llm-api-client package.
+The full testing guide is available in [TESTING.md](../TESTING.md); this file covers what is specific to
+this directory. [INTEGRATION_TESTING.md](../INTEGRATION_TESTING.md) covers the tests that
+make real API calls.
 
-## Test Structure
+```bash
+pip install -e ".[test]"
+pytest -m "not integration"     # 274 unit tests, no API keys needed
+```
+
+## Layout
 
 ```
 tests/
-├── __init__.py                 # Package marker
-├── conftest.py                 # Shared fixtures and mocks
-├── test_response.py            # Tests for response dataclasses
-├── test_utils.py               # Tests for utility functions
-├── test_base_client.py         # Tests for factory and base functionality
-├── test_openai_client.py       # Tests for OpenAI client
-├── test_claude_client.py       # Tests for Claude client
-├── test_async.py               # Tests for async functionality
-└── README.md                   # This file
+├── __init__.py                      # Package marker
+├── conftest.py                      # Shared fixtures and mocks
+├── test_response.py                 # Response dataclasses
+├── test_utils.py                    # Utility functions and usage recovery
+├── test_base_client.py              # Factory and base functionality
+├── test_openai_client.py            # OpenAI client, including parameter adaptation
+├── test_claude_client.py            # Claude client
+├── test_other_clients.py            # Gemini, Mistral, DeepSeek, Qwen, Cohere, HuggingFace
+├── test_cost_accounting.py          # The cost contract, across providers
+├── test_pricing.py                  # Cost calculation and billed-cost handling
+├── test_reasoning.py                # Reasoning token derivation
+├── test_caching.py                  # Prompt caching metrics
+├── test_files_and_resize.py         # Text files and image resizing
+├── test_async.py                    # Async functionality
+├── test_version.py                  # Release metadata
+├── test_integration_*.py            # Real API calls; need keys, cost money
+└── fixtures/                        # Test images and data
 ```
 
-## Running Tests
+## Markers
 
-### Install Test Dependencies
+Registered in `pytest.ini`: `unit`, `integration`, `slow`, `asyncio`. Only `integration`
+is currently applied to tests; selecting the other markers collects no tests. Use:
 
 ```bash
-# Install package with test dependencies
-pip install -e ".[test]"
-
-# Or install with all dev dependencies
-pip install -e ".[dev]"
+pytest -m "not integration"     # everything that runs without keys
+pytest -m integration           # real API calls
 ```
 
-### Run All Tests
+## Fixtures
 
-```bash
-# Run all tests
-pytest
+Defined in `conftest.py`.
 
-# Run with verbose output
-pytest -v
+| Fixture | Purpose |
+|---|---|
+| `mock_openai_response` | An OpenAI-shaped chat completion (10 input tokens, 20 output tokens) |
+| `mock_reasoning_response` | An x-ai-shaped response with reasoning tokens outside the completion count |
+| `mock_openrouter_response` | A response containing a provider-billed cost |
+| `mock_gemini_response` | A genai response with `usage_metadata` |
+| `mock_gemini_thinking_response` | A genai response reporting thinking tokens |
+| `mock_gemini_truncated_thinking_response` | A Gemini thinking response with no candidate token count |
+| `mock_claude_response` | An Anthropic response with cache counters |
+| `mock_mistral_response`, `mock_cohere_response` | Provider-shaped responses |
+| `mock_huggingface_response` | A router response echoing a normalised model id |
+| `sample_image_path` | Path to a real 100x100 PNG in a temporary directory |
+| `mock_api_key`, `mock_pydantic_model` | A test key, and a schema for structured output |
+| `stub_pricing` | Configures a test pricing table and resets the manager after the test |
+| `wire_structured_output` | Points a mocked structured-output endpoint at a response or an exception |
 
-# Run with coverage report
-pytest --cov=ai_client --cov-report=term-missing
-```
+The following fixtures support cost-accounting tests:
 
-### Run Specific Tests
+**`stub_pricing`** exists because `ai_client/pricing.json` is regenerated at every release.
+Asserting against a real model's rate produces a test that breaks whenever a provider
+changes its prices, so use a test table with fixed rates.
 
-```bash
-# Run tests in a specific file
-pytest tests/test_response.py
+**`wire_structured_output`** exists because the client reads the response body before the
+SDK validates it, so tests must configure both the raw-response and parsed-response interfaces.
 
-# Run a specific test class
-pytest tests/test_response.py::TestUsage
-
-# Run a specific test function
-pytest tests/test_response.py::TestUsage::test_usage_creation
-
-# Run tests matching a pattern
-pytest -k "test_openai"
-```
-
-### Run Tests by Marker
-
-```bash
-# Run only unit tests
-pytest -m unit
-
-# Run only async tests
-pytest -m asyncio
-
-# Exclude slow tests
-pytest -m "not slow"
-```
-
-## Test Types
-
-### Unit Tests (Default)
-
-These tests mock external dependencies (API clients) and test internal logic:
-
-```bash
-pytest -m unit
-```
-
-All current tests are unit tests that don't require API keys.
-
-### Integration Tests (Future)
-
-Integration tests that make real API calls (require API keys):
-
-```bash
-# Not yet implemented
-pytest -m integration
-```
-
-To add integration tests in the future, create a `.env` file:
-
-```bash
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
-GENAI_API_KEY=...
-MISTRAL_API_KEY=...
-```
-
-## Code Coverage
-
-Generate a detailed HTML coverage report:
-
-```bash
-pytest --cov=ai_client --cov-report=html
-
-# Open the report
-open htmlcov/index.html  # macOS
-xdg-open htmlcov/index.html  # Linux
-start htmlcov/index.html  # Windows
-```
-
-## Writing New Tests
-
-### Example Test
+## Writing a Test
 
 ```python
 import pytest
 from unittest.mock import Mock, patch
 from ai_client import create_ai_client
 
+
 def test_my_feature():
-    \"\"\"Test description.\"\"\"
+    """Test description."""
     with patch('ai_client.openai_client.OpenAI') as mock_openai:
         mock_client = Mock()
         mock_openai.return_value = mock_client
 
-        # Setup mock response
         mock_response = Mock()
         mock_response.choices = [Mock()]
         mock_response.choices[0].message.content = "test"
         mock_client.chat.completions.create.return_value = mock_response
 
-        # Test
         client = create_ai_client('openai', api_key='test')
         response = client.prompt('gpt-4', 'test')
 
         assert response.text == "test"
 ```
 
-### Using Fixtures
+When writing tests, account for the following:
 
-Fixtures are defined in `conftest.py`:
-
-```python
-def test_with_fixture(mock_openai_response, sample_image_path):
-    \"\"\"Test using predefined fixtures.\"\"\"
-    # mock_openai_response and sample_image_path are automatically provided
-    assert sample_image_path.endswith('.jpg')
-```
-
-### Testing Async Code
-
-```python
-@pytest.mark.asyncio
-async def test_async_feature():
-    \"\"\"Test async functionality.\"\"\"
-    result = await some_async_function()
-    assert result == expected
-```
-
-## Continuous Integration
-
-These tests are designed to run in CI/CD pipelines:
-
-```yaml
-# Example GitHub Actions workflow
-- name: Run tests
-  run: |
-    pip install -e ".[test]"
-    pytest --cov=ai_client --cov-report=xml
-
-- name: Upload coverage
-  uses: codecov/codecov-action@v3
-```
-
-## Test Best Practices
-
-1. **Mock External Dependencies**: All API clients should be mocked
-2. **Test One Thing**: Each test should verify one behavior
-3. **Clear Names**: Test names should describe what they test
-4. **Use Fixtures**: Reuse common setup via fixtures
-5. **Fast Tests**: Keep unit tests fast (< 1 second each)
-6. **Independent Tests**: Tests should not depend on each other
-
-## Troubleshooting
-
-### Import Errors
-
-```bash
-# Make sure package is installed in editable mode
-pip install -e .
-```
-
-### Missing Dependencies
-
-```bash
-# Install test dependencies
-pip install -e ".[test]"
-```
-
-### Async Test Issues
-
-```bash
-# Make sure pytest-asyncio is installed
-pip install pytest-asyncio
-```
-
-## Current Test Coverage
-
-Run `pytest --cov=ai_client` to see current coverage. Goal is >90% coverage for core functionality.
-
-### Coverage Status
-
-- `response.py`: ✅ Full coverage
-- `utils.py`: ✅ Full coverage
-- `base_client.py`: ✅ Full coverage
-- `openai_client.py`: ✅ Full coverage
-- `claude_client.py`: ✅ Full coverage
-- `gemini_client.py`: ⚠️ Needs tests
-- `mistral_client.py`: ⚠️ Needs tests
-- `deepseek_client.py`: ⚠️ Needs tests (extends OpenAI)
-- `qwen_client.py`: ⚠️ Needs tests (extends OpenAI)
-
-## Adding Integration Tests
-
-To add integration tests that use real APIs:
-
-1. Create `test_integration.py`
-2. Mark with `@pytest.mark.integration`
-3. Use environment variables for API keys
-4. Add to CI only for scheduled runs, not PRs
-
-Example:
-
-```python
-import pytest
-import os
-
-@pytest.mark.integration
-def test_real_openai_call():
-    \"\"\"Integration test with real OpenAI API.\"\"\"
-    api_key = os.getenv('OPENAI_API_KEY')
-    if not api_key:
-        pytest.skip("OPENAI_API_KEY not set")
-
-    client = create_ai_client('openai', api_key=api_key)
-    response = client.prompt('gpt-4', 'Say hello')
-
-    assert len(response.text) > 0
-    assert response.usage.total_tokens > 0
-```
+- A failure-path test spends seven seconds in `retry_with_exponential_backoff` unless it
+  patches `ai_client.utils.time.sleep`.
+- An unrestricted `Mock` creates attributes on access and does not reproduce SDK parsing
+  behavior. Use `httpx.MockTransport` with the provider SDK to test missing response fields
+  and SDK parsing failures.
+- A fixture encodes an assumption about a provider. Cohere returns whole numbers as
+  floats, for instance, which a hand-written integer fixture will not reveal.
+- Verify that regression tests fail before the fix and pass afterward.

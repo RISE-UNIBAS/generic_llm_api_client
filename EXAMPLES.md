@@ -122,18 +122,18 @@ response = client.prompt('deepseek/deepseek-chat', 'Hello!')
 
 ### HuggingFace (Inference Providers)
 
-Call any model in the HuggingFace Inference Providers catalog with a single HF token:
+Call any model in the HuggingFace Inference Providers catalog with a single HuggingFace token:
 
 ```python
 client = create_ai_client('huggingface', api_key='hf_...')
 
 response = client.prompt('deepseek-ai/DeepSeek-V3.1', 'Hello!')
 print(response.text)
-print(response.usage.total_tokens)  # cost is None for HuggingFace; tokens are tracked
+print(response.usage.total_tokens)  # cost is None for a bare router id; tokens are tracked
 ```
 
 Pin the serving provider with a `:<provider>` suffix when you need reproducible capabilities
-(`:fastest` is the default, `:cheapest` also available):
+(`:fastest` is the default, `:cheapest` is also available):
 
 ```python
 response = client.prompt('deepseek-ai/DeepSeek-V3.1:novita', 'Hello!')
@@ -152,7 +152,7 @@ client = create_ai_client(
 ### HuggingFace (Dedicated Inference Endpoint)
 
 For a Hub model the router does not serve, deploy your own endpoint. The `model` argument is the
-endpoint name, not the Hub repo id:
+endpoint name rather than the Hub repository ID:
 
 ```python
 client = create_ai_client(
@@ -164,7 +164,7 @@ client = create_ai_client(
 response = client.prompt('my-endpoint-name', 'Hello!')
 ```
 
-Dedicated endpoints scale to zero after an hour idle with a 3-5 minute cold start, so the first
+Dedicated endpoints scale to zero after an hour of inactivity with a 3-5 minute cold start, so the first
 call to an idle endpoint may return an error response.
 
 ## Structured Output (Pydantic)
@@ -329,11 +329,21 @@ print(f"Input tokens: {response.usage.input_tokens}")
 print(f"Output tokens: {response.usage.output_tokens}")
 print(f"Total tokens: {response.usage.total_tokens}")
 
+# Reasoning a provider billed outside output_tokens. None means it reported no total,
+# which is not the same as reporting no reasoning.
+print(f"Reasoning tokens: {response.usage.reasoning_tokens}")
+
 if response.usage.cached_tokens:
     print(f"Cached tokens: {response.usage.cached_tokens}")
 
 if response.usage.estimated_cost_usd:
     print(f"Estimated cost: ${response.usage.estimated_cost_usd:.6f}")
+
+# A request that fell back was billed more than once. The discarded attempt is reported
+# separately, so the successful response still shows only what it used.
+if response.usage.attempts > 1:
+    print(f"Attempts billed: {response.usage.attempts}")
+    print(f"Discarded cost: ${response.usage.discarded_cost_usd or 0:.6f}")
 ```
 
 ### Save to JSON
@@ -397,6 +407,7 @@ client = create_ai_client('openai', api_key='sk-...')
 
 total_input_tokens = 0
 total_output_tokens = 0
+total_reasoning_tokens = 0
 total_cost = 0.0
 
 prompts = [
@@ -410,13 +421,19 @@ for prompt_text in prompts:
 
     total_input_tokens += response.usage.input_tokens
     total_output_tokens += response.usage.output_tokens
+    # Reasoning models bill tokens outside output_tokens, so leaving these out understates
+    # the count. estimated_cost_usd already covers them.
+    total_reasoning_tokens += response.usage.reasoning_tokens or 0
 
     if response.usage.estimated_cost_usd:
         total_cost += response.usage.estimated_cost_usd
+    # Attempts a fallback threw away were billed too.
+    total_cost += response.usage.discarded_cost_usd or 0
 
 print(f"\n=== Cost Summary ===")
 print(f"Total input tokens: {total_input_tokens}")
 print(f"Total output tokens: {total_output_tokens}")
+print(f"Total reasoning tokens: {total_reasoning_tokens}")
 print(f"Total cost: ${total_cost:.4f}")
 ```
 
@@ -466,11 +483,11 @@ for provider, model in providers:
 ```
 ## Prompt Caching
 
-Prompt caching reduces costs and latency by reusing previously processed content. The `cache=True` parameter works across all providers, with each handling it appropriately.
+Prompt caching can reduce costs and latency by reusing previously processed content. The client accepts `cache=True` across providers; support and configuration vary as described below.
 
 ### Generic Caching API
 
-**The beauty of this package**: Use the same API regardless of provider!
+Use a consistent caching interface across providers.
 
 ```python
 from ai_client import create_ai_client
@@ -483,13 +500,13 @@ response = client.prompt(
     model='gpt-4o',
     prompt='Analyze this document and list key points',
     files=['research_paper.txt'],  # Large file
-    cache=True,  # ✅ Generic - each provider interprets appropriately
+    cache=True,  # Shared parameter with provider-specific behavior
 )
 
 # Check caching results (works for all providers)
 if response.usage.cached_tokens:
     savings = response.usage.get_cache_savings()
-    print(f"Cache hit! Saved {savings:.1%} of tokens")
+    print(f"Cache hit. Saved {savings:.1%} of tokens")
 ```
 
 ### How Each Provider Handles `cache=True`
@@ -505,7 +522,7 @@ if response.usage.cached_tokens:
 
 #### OpenAI: Automatic Caching
 
-OpenAI automatically caches prompts with 1024+ tokens. No special code needed!
+OpenAI automatically caches prompts with 1024 or more tokens; no additional caching configuration is required.
 
 ```python
 client = create_ai_client('openai', api_key='sk-...')
@@ -519,7 +536,7 @@ response1 = client.prompt(
 )
 print(f"Cached: {response1.usage.cached_tokens or 0} tokens")  # 0
 
-# Second request with same prefix: Cache hit!
+# Second request with same prefix: Cache hit.
 response2 = client.prompt(
     'gpt-4o',
     f"Document:\n\n{long_document}\n\nList three supporting points."
@@ -553,14 +570,14 @@ response1 = client.prompt(
     'claude-3-5-sonnet-20241022',
     prompt="What is the main theme of this essay?",
     files=['long_essay.txt'],  # 5,000+ tokens
-    cache=True,  # ✅ Adds cache_control blocks
+    cache=True,  # Adds cache_control blocks
 )
 
 conv_id = response1.conversation_id
 print(f"Cache created: {response1.usage.cache_creation_tokens} tokens")
 print(f"Cost: 125% of input rate")
 
-# Subsequent requests (within 5 min): Cache hit!
+# Subsequent requests (within 5 min): Cache hit.
 response2 = client.prompt(
     'claude-3-5-sonnet-20241022',
     prompt="List three supporting arguments.",
@@ -568,18 +585,18 @@ response2 = client.prompt(
 )
 
 print(f"Cache read: {response2.usage.cache_read_tokens} tokens")
-print(f"Cost: 10% of input rate (90% savings!)")
+print(f"Cost: 10% of input rate (90% savings)")
 print(f"Savings: {response2.usage.get_cache_savings():.1%}")
 ```
 
 **Claude Cache Pricing**:
 - Write to cache: 125% of base input cost
-- Read from cache: **10% of base input cost** (90% discount!)
+- Read from cache: **10% of base input cost** (90% discount)
 - Auto-refreshes on access (5-min TTL)
 
 #### Gemini: Explicit Cache (Advanced)
 
-*Note: Gemini requires explicit cache creation. This is more advanced.*
+Gemini requires explicit cache creation before the cache can be used in a request.
 
 ```python
 client = create_ai_client('genai', api_key='...')
@@ -599,7 +616,7 @@ response = client.prompt(
 Track multi-turn conversations automatically:
 
 ```python
-client = create_ai_client('openai', api_key='sk-...')  # Any provider works!
+client = create_ai_client('openai', api_key='sk-...')  # The interface is shared across providers
 
 # First message
 response1 = client.prompt(
@@ -630,7 +647,7 @@ client.clear_conversation(conv_id)
 
 ### Combined: Caching + Conversations
 
-Maximum efficiency with both features:
+Combine caching with conversation tracking:
 
 ```python
 client = create_ai_client('anthropic', api_key='sk-...')
@@ -640,7 +657,7 @@ response1 = client.prompt(
     'claude-3-5-sonnet-20241022',
     prompt="I've provided a research paper. Please read it.",
     files=['research_paper.txt'],  # 10,000 tokens
-    cache=True,  # ✅ Cache the file content
+    cache=True,  # Cache the file content
 )
 
 conv_id = response1.conversation_id
@@ -657,26 +674,26 @@ for question in questions:
     response = client.prompt(
         'claude-3-5-sonnet-20241022',
         prompt=question,
-        conversation_id=conv_id,  # ✅ Reuses both cache AND history
+        conversation_id=conv_id,  # Reuses both cache and history
     )
     
     print(f"\nQ: {question}")
     print(f"A: {response.text[:150]}...")
-    print(f"Cache read: {response.usage.cache_read_tokens} tokens (90% savings!)")
+    print(f"Cache read: {response.usage.cache_read_tokens} tokens (90% savings)")
 ```
 
 ### Best Practices
 
 #### 1. Structure Prompts for Caching
 
-**✅ Good**: Static content first
+**Recommended**: Place static content first
 ```python
 # Put unchanging content at the beginning
 prompt = f"Reference:\n\n{large_document}\n\nUser question: {user_question}"
 response = client.prompt(model, prompt, cache=True)
 ```
 
-**❌ Bad**: Dynamic content first
+**Less effective for caching**: Place dynamic content first
 ```python
 # Cache misses because prefix changes each time
 prompt = f"User {user_id}: {user_question}\n\nReference: {large_document}"
@@ -690,7 +707,7 @@ response = client.prompt(model, prompt, files=['doc.txt'], cache=True)
 # Generic - works for all providers
 savings = response.usage.get_cache_savings()
 if savings > 0:
-    print(f"Cache hit! Saved {savings:.1%}")
+    print(f"Cache hit. Saved {savings:.1%}")
 else:
     print("Cache miss - first request or expired")
 
@@ -718,7 +735,7 @@ for question in follow_up_questions:
     response = client.prompt(
         model,
         question,
-        conversation_id=response1.conversation_id,  # ✅ Maintains context
+        conversation_id=response1.conversation_id,  # Maintains context
     )
 ```
 
@@ -732,4 +749,4 @@ for question in follow_up_questions:
 | **Best For** | High-volume apps | Multi-turn conversations | Research sessions |
 | **API** | `cache=True` (optional) | `cache=True` (required for files) | `cache=True` + `cache_id` |
 
-**Key Takeaway**: Use `cache=True` everywhere, and it just works! Each provider handles it optimally.
+Use `cache=True` with the provider-specific configuration described above. Providers without caching support ignore the parameter.

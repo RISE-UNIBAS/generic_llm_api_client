@@ -1,39 +1,41 @@
 # Generic LLM API Client
 
-A unified, provider-agnostic Python client for multiple LLM APIs. Query any LLM (OpenAI, Anthropic Claude, Google Gemini, Mistral, DeepSeek, Qwen, OpenRouter, and more) through a single, consistent interface.
+A unified, provider-agnostic Python client for multiple LLM APIs. Access supported LLMs (OpenAI, Anthropic Claude, Google Gemini, Mistral, DeepSeek, Qwen, OpenRouter, and more) through a single, consistent interface.
 
-**Perfect for**: Research workflows, benchmarking studies, automated testing, and applications that need to work with multiple LLM providers without dealing with their individual APIs.
+Designed for research workflows, benchmarking, automated testing, and applications that require a consistent interface across LLM providers.
 
-## Important Note
+## Scope
 
 This package is a **convenience wrapper** for working with multiple LLM providers through a unified interface. It is **not intended as a replacement** for the official provider libraries (openai, anthropic, google-genai, etc.).
 
 ### Use this package when:
 - You need to query multiple LLM providers in the same project
-- You're building benchmarking or comparison tools
+- You are building benchmarking or comparison tools
 - You want a consistent interface across providers
 - You need provider-agnostic code for research workflows
 
 ### Use the official libraries when:
 
-- You need cutting-edge features on day one of release
+- You need new features as soon as they are released
 - You require provider-specific advanced features
 - You only work with a single provider
 
-**Update pace:** This package is maintained by a small team and may not immediately support every new feature from upstream providers. We prioritize stability and cross-provider compatibility over bleeding-edge feature coverage.
+**Update pace:** This package is maintained by a small team and may not immediately support every new feature from upstream providers. We prioritize stability and cross-provider compatibility over immediate coverage of new features.
 
 ## Features
 
-- **Provider-Agnostic**: Single interface for OpenAI, Anthropic, Google, Mistral, DeepSeek, Qwen, and OpenRouter
+- **Provider-Agnostic**: Single interface for OpenAI, Anthropic, Google, Mistral, Cohere, DeepSeek, Qwen, xAI, HuggingFace and OpenRouter
 - **Tool Calling (Beta)**: Let LLMs use external tools with automatic execution
 - **Multimodal Support**: Text + images across all supporting providers
 - **Text File Support**: Automatically include text files in prompts for document analysis
 - **Automatic Image Resizing**: Reduce API costs by auto-resizing large images
 - **Structured Output**: Unified Pydantic model support across providers
 - **Rich Response Objects**: Detailed token usage, costs, timing, and metadata
+- **Cost Accounting**: Records reasoning tokens billed outside the completion, tracks discarded fallback attempts, and preserves provider-billed costs
+- **Model-Aware Requests**: Adapts parameters for models that have renamed or removed supported settings
 - **Async Support**: Parallel processing for faster benchmarks
 - **Built-in Retry Logic**: Automatic exponential backoff for rate limits
-- **Custom Base URLs**: Easy integration with OpenRouter, sciCORE, and other OpenAI-compatible APIs
+- **Custom Base URLs**: Integration with OpenRouter, sciCORE, and other OpenAI-compatible APIs
 
 ## Installation
 
@@ -62,7 +64,7 @@ print(f"Time: {response.duration:.2f}s")
 | Provider | ID | Multimodal | Structured Output | Tool Calling |
 |----------|-----|-----------|-------------------|--------------|
 | OpenAI | `openai` | Yes | Yes | Yes (Beta) |
-| Anthropic Claude | `anthropic` | Yes | Yes (via tools) | Coming Soon |
+| Anthropic Claude | `anthropic` | Yes | Yes (via tools) | Planned |
 | Google Gemini | `genai` | Yes | Yes | No |
 | Mistral | `mistral` | Yes | Yes | No |
 | DeepSeek | `deepseek` | Yes | Yes | Via OpenAI |
@@ -113,7 +115,7 @@ response, duration = client.prompt(
 )
 ```
 
-### Text Files (NEW in v0.2.0)
+### Text Files (Added in v0.2.0)
 
 Include text files in your prompts for document analysis:
 
@@ -139,7 +141,7 @@ response, duration = client.prompt(
 print(response.text)
 ```
 
-### Automatic Image Resizing (NEW in v0.2.0)
+### Automatic Image Resizing (Added in v0.2.0)
 
 Reduce API costs by automatically resizing large images:
 
@@ -165,9 +167,9 @@ response, duration = client.prompt(
 client = create_ai_client('openai', api_key='sk-...', max_image_size=None)
 ```
 
-### Combining Files and Images (NEW in v0.2.0)
+### Combining Files and Images (Added in v0.2.0)
 
-Perfect for humanities research - compare visual and textual sources:
+Compare visual and textual sources in humanities research:
 
 ```python
 from ai_client import create_ai_client
@@ -222,7 +224,7 @@ print(f"{person.name}, {person.age}, {person.occupation}")
 
 ### Tool Calling (Beta)
 
-Enable LLMs to use external tools for enhanced capabilities:
+Allow models to call external tools:
 
 ```python
 from ai_client import create_ai_client
@@ -248,14 +250,14 @@ if response.tool_results:
 **Features:**
 - **Provider-agnostic**: Same tool definitions work across OpenAI and Claude
 - **Automatic execution**: Tools are called and results returned automatically
-- **Single-round**: LLM can call tools once per request (multi-round coming soon)
+- **Single-round**: LLM can call tools once per request (multi-round support planned)
 - **Pluggable executors**: Support for Python functions, REST APIs, and MCP servers
 
-**Current status (POC):**
-- ✅ OpenAI support (GPT-4o, GPT-4, etc.)
-- 🚧 Claude support (coming soon)
-- ✅ Built-in tool: GeonamesSearch
-- 🚧 REST API & MCP executors (planned)
+**Current status (proof of concept):**
+- Supported: OpenAI (GPT-4o, GPT-4, etc.)
+- Planned: Claude support
+- Available built-in tool: GeonamesSearch
+- Planned: REST API and MCP executors
 
 See `example_tool_calling.py` for more examples.
 
@@ -312,13 +314,13 @@ response, _ = client.prompt('deepseek/deepseek-chat', 'Hello!')
 
 ### HuggingFace
 
-HuggingFace is reached through the `huggingface` provider (alias: `hf`), which covers two
-different surfaces.
+Access HuggingFace through the `huggingface` provider (alias: `hf`), which covers two
+deployment options.
 
 **1. Inference Providers router (default).** One HuggingFace token gives access to the open-weight
 models in the [Inference Providers catalog](https://huggingface.co/models?inference_provider=all),
-executed by partner providers (Groq, Together, Cerebras, Novita, and others). No `base_url` needed;
-pass any catalog model id as the model:
+executed by partner providers (Groq, Together, Cerebras, Novita, and others). No `base_url` is required;
+pass a catalog model ID as the model:
 
 ```python
 from ai_client import create_ai_client
@@ -329,7 +331,7 @@ response = client.prompt('deepseek-ai/DeepSeek-V3.1', 'Hello!')
 print(response.text)
 ```
 
-Model ids are Hub repo ids and accept an optional routing suffix:
+Model IDs are Hub repository IDs and accept an optional routing suffix:
 
 | Suffix | Effect |
 |--------|--------|
@@ -343,7 +345,7 @@ Model ids are Hub repo ids and accept an optional routing suffix:
 response = client.prompt('deepseek-ai/DeepSeek-V3.1:novita', 'Hello!')
 ```
 
-Pinning matters because capabilities vary by provider: not every provider backing a given model
+Capabilities vary by provider: not every provider backing a given model
 supports strict structured output or tool calling. When a provider does not, the client falls back
 to JSON mode with the schema in the prompt.
 
@@ -360,13 +362,13 @@ client = create_ai_client(
 
 Cost is populated only when the model id **pins a provider** (e.g.
 `swiss-ai/Apertus-v1.5-8B:publicai`). A bare router id routes to whichever partner is
-fastest, and the same model is served by several at different prices, so
+fastest, and multiple partners may serve the same model at different prices, so
 `usage.estimated_cost_usd` stays `None`; see [PRICING.md](PRICING.md). Token counts are
-tracked either way.
+tracked in both cases.
 
 **2. Dedicated Inference Endpoints.** For any Hub model the router does not serve, deploy it to
 your own endpoint and pass its URL. Note that the `model` argument is then the *endpoint name*,
-not the Hub repo id:
+not the Hub repository ID:
 
 ```python
 client = create_ai_client(
@@ -380,7 +382,7 @@ response = client.prompt('my-endpoint-name', 'Hello!')  # endpoint name, not rep
 
 Dedicated endpoints scale to zero after an hour of inactivity, with a 3-5 minute cold start; the
 built-in retry is fixed at 3 attempts with a 60s maximum backoff, so the first call to an idle
-endpoint can come back as an error response. Retry it once the endpoint is warm.
+endpoint may return an error response. Retry after the endpoint has started.
 
 ### Accessing Response Metadata
 
@@ -467,7 +469,7 @@ response, _ = client.prompt(
 
 ## Use Case: Benchmarking
 
-Perfect for research workflows that need to evaluate multiple models:
+Evaluate multiple models within a research workflow:
 
 ```python
 from ai_client import create_ai_client
@@ -475,9 +477,9 @@ import asyncio
 
 async def benchmark_models():
     providers = [
-        ('openai', 'gpt-4'),
-        ('anthropic', 'claude-3-5-sonnet-20241022'),
-        ('genai', 'gemini-2.0-flash-exp'),
+        ('openai', 'gpt-4o-mini'),
+        ('anthropic', 'claude-haiku-4-5'),
+        ('genai', 'gemini-2.5-flash'),
     ]
 
     prompt = 'Explain quantum entanglement'
@@ -593,7 +595,7 @@ mypy ai_client/
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome. Submit proposed changes through a pull request.
 
 ## License
 
