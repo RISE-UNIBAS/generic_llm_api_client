@@ -1,10 +1,4 @@
-"""
-Anthropic Claude-specific implementation of the BaseAIClient.
-
-This module provides the ClaudeClient class, which implements the BaseAIClient
-interface specifically for Anthropic's Claude API, supporting both text and multimodal
-interactions.
-"""
+"""Anthropic Messages API client with multimodal and structured-output support."""
 
 import base64
 import json
@@ -30,9 +24,7 @@ from .utils import (
 
 logger = logging.getLogger(__name__)
 
-# Model families that have retired the temperature parameter and reject it outright,
-# matched as a prefix. Anthropic reports it as deprecated rather than unsupported, so
-# _send corrects for families released after this version too.
+# Known model prefixes that reject temperature. _send handles other models at runtime.
 TEMPERATURE_FREE_MODEL_PREFIXES = (
     "claude-opus-4-7",
     "claude-opus-4-8",
@@ -41,28 +33,60 @@ TEMPERATURE_FREE_MODEL_PREFIXES = (
     "claude-fable-5",
 )
 
+# Known model prefixes that reject forced tool use; start with an optional tool.
+# Other models use the same fallback after a tool_choice rejection.
+FORCED_TOOL_FREE_MODEL_PREFIXES = (
+    "claude-fable-5-1",
+    "claude-mythos-5-1",
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+)
+
+OPTIONAL_TOOL_DESCRIPTION = (
+    "Record your final answer. Call this tool exactly once, after reading the whole input, "
+    "with every item you extracted. There is no tool result to wait for."
+)
+
+
+def _unknown_keys(json_schema: dict, payload: Any) -> List[str]:
+    """
+    Detect undeclared top-level keys that Pydantic could silently ignore.
+
+    Resolve a root #/$defs/ reference. Skip roots without a properties mapping,
+    roots permitting additional properties or declaring nonempty patternProperties, and
+    non-object payloads. Otherwise return sorted keys absent from properties.
+    This heuristic does not validate values or match property patterns.
+    """
+    root = json_schema
+    ref = root.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/$defs/"):
+        root = json_schema.get("$defs", {}).get(ref[len("#/$defs/") :])
+    if not isinstance(root, dict) or not isinstance(payload, dict):
+        return []
+
+    known = root.get("properties")
+    if not isinstance(known, dict):
+        return []
+    if root.get("additionalProperties") not in (None, False) or root.get("patternProperties"):
+        return []
+    return sorted(key for key in payload if key not in known)
+
 
 class ClaudeClient(BaseAIClient):
     """
-    Anthropic Claude-specific implementation of the BaseAIClient.
+    Anthropic client for text, images, caching, and structured output.
 
-    This class implements the BaseAIClient interface for Anthropic's Claude API,
-    supporting both text-only and multimodal requests with tool-based structured output.
-
-    Key features:
-    - Integration with Anthropic's Messages API
-    - Support for multimodal content (text + images)
-    - Support for Claude-specific parameters like top_p, top_k
-    - Structured output via tools API
+    Structured requests use a forced tool when supported. Models that reject it
+    receive an optional tool with the same schema. Plain text is the final fallback.
     """
 
     PROVIDER_ID = "anthropic"
-    SUPPORTS_MULTIMODAL = True  # Claude supports images
-    SUPPORTS_TOOLS = True  # Claude supports tool calling
+    SUPPORTS_MULTIMODAL = True
+    SUPPORTS_TOOLS = True
 
     def _init_client(self):
         """Initialize the Anthropic client with the provided API key."""
-        self.api_client = Anthropic(api_key=self.api_key, timeout=300.0)  # 5 minutes timeout
+        self.api_client = Anthropic(api_key=self.api_key, timeout=300.0)
 
     def _prepare_content_with_images(
         self,
@@ -78,7 +102,7 @@ class ClaudeClient(BaseAIClient):
         Args:
             prompt: The text prompt
             images: List of image paths/URLs
-            cache_images: If True, mark ALL images with cache_control for prompt caching
+            cache_images: Mark each image with cache_control for prompt caching
             file_content: Text content from files (empty string if none)
             content_order: Content ordering policy override
 
@@ -315,14 +339,10 @@ class ClaudeClient(BaseAIClient):
                 }
                 for tool in tool_definitions
             ]
-            # Let Claude decide whether to use tools (don't force it)
-            # params["tool_choice"] = {"type": "auto"}  # This is the default
+            # Omitting tool_choice lets the model choose whether to call a tool.
 
-        # A failed attempt is still billed, so its tokens are accumulated here and reported
-        # beside the successful response. Local to this call, never on self: one client
-        # object serves many worker threads, and shared state would attribute one thread's
-        # waste to another's response. Note _do_prompt_with_retry re-enters this method on
-        # failure, so the totals cover the final attempt only.
+        # Keep discarded usage local for thread safety. Outer retries re-enter this
+        # method, so the accumulator covers only this invocation's fallback attempts.
         discarded = DiscardedAttempts()
 
         # Handle structured output using tools
@@ -337,33 +357,37 @@ class ClaudeClient(BaseAIClient):
                 }
             ]
 
-            params["tools"] = tools
-            params["tool_choice"] = {"type": "tool", "name": "extract_structured_data"}
+            forced_tool_refused = self._rejects_forced_tool(model)
 
-            raw_response = None
-            try:
-                raw_response = self._send(params, model)
-                return self._build_response(
+            if not forced_tool_refused:
+                response, forced_tool_refused = self._attempt_tool(
+                    params,
+                    tools,
+                    {"type": "tool", "name": "extract_structured_data"},
                     self._create_response_from_tool,
-                    raw_response,
+                    (model, response_format),
                     model,
-                    response_format,
-                    discarded=discarded,
+                    discarded,
+                    "tools",
                 )
-            except Exception as e:
-                # The call may have succeeded and only the parsing failed, in which case the
-                # usage is on the response rather than the exception. Either way it was
-                # billed, and the retry below is billed again.
-                wasted = self._record_discarded_attempt(
-                    discarded, e, raw_response, self.PROVIDER_ID, model
+                if response is not None:
+                    return response
+
+            if forced_tool_refused:
+                # Preserve the original schema and identify the tool call as the final answer.
+                optional_tools = [{**tools[0], "description": OPTIONAL_TOOL_DESCRIPTION}]
+                response, _ = self._attempt_tool(
+                    params,
+                    optional_tools,
+                    {"type": "auto"},
+                    self._create_response_from_optional_tool,
+                    (model, response_format, json_schema),
+                    model,
+                    discarded,
+                    "optional tool",
                 )
-                logger.warning(
-                    f"Structured output via tools failed: {e}. Falling back to text mode."
-                    f"{wasted} A second request will be billed."
-                )
-                # Remove tools and try again
-                del params["tools"]
-                del params["tool_choice"]
+                if response is not None:
+                    return response
 
         # Send the request to Anthropic
         try:
@@ -377,16 +401,73 @@ class ClaudeClient(BaseAIClient):
 
     @staticmethod
     def _rejects_temperature(model: str) -> bool:
-        """Return True if the model has retired the temperature parameter."""
+        """Check whether the model matches a known temperature-rejecting prefix."""
         return model.split("/")[-1].lower().startswith(TEMPERATURE_FREE_MODEL_PREFIXES)
+
+    @staticmethod
+    def _rejects_forced_tool(model: str) -> bool:
+        """Check whether the model matches a known forced-tool-rejecting prefix."""
+        return model.split("/")[-1].lower().startswith(FORCED_TOOL_FREE_MODEL_PREFIXES)
+
+    def _attempt_tool(
+        self,
+        params: dict,
+        tools: List[dict],
+        tool_choice: dict,
+        builder,
+        builder_args: tuple,
+        model: str,
+        discarded: DiscardedAttempts,
+        label: str,
+    ) -> Tuple[Optional[LLMResponse], bool]:
+        """
+        Attempt structured output through a tool and record reported usage on failure.
+
+        Args:
+            params: Request parameters; tools and tool_choice are removed on failure
+            tools: Tool definitions for this attempt
+            tool_choice: Tool choice for this attempt
+            builder: Response builder passed to _build_response
+            builder_args: Builder arguments after the raw response
+            model: Model identifier
+            discarded: Accumulator for this call
+            label: Attempt name for logging
+
+        Returns:
+            The response or None, and whether tool_choice was rejected before a response
+        """
+        params["tools"] = tools
+        params["tool_choice"] = tool_choice
+        raw_response = None
+        try:
+            raw_response = self._send(params, model)
+            return (
+                self._build_response(builder, raw_response, *builder_args, discarded=discarded),
+                False,
+            )
+        except Exception as e:
+            wasted = self._record_discarded_attempt(
+                discarded, e, raw_response, self.PROVIDER_ID, model
+            )
+            del params["tools"]
+            del params["tool_choice"]
+            # Parameter rejections before generation do not incur token usage.
+            refused = raw_response is None and rejects_parameter(e, "tool_choice")
+            if refused:
+                logger.warning(
+                    f"Model {model} refuses forced tool use; retrying with an optional tool. "
+                    f"Add its prefix to FORCED_TOOL_FREE_MODEL_PREFIXES to skip this round trip."
+                )
+            else:
+                logger.warning(
+                    f"Structured output via {label} failed: {e}. Falling back to text mode."
+                    f"{wasted} A second request will be billed."
+                )
+            return None, refused
 
     def _send(self, params: dict, model: str):
         """
-        Send a request, dropping a parameter the model refuses and retrying once.
-
-        Anthropic has retired temperature on its newer models, and the rejection is a
-        400 raised before anything is generated, so nothing is billed. Known families
-        are corrected before the call; this recovers for the rest.
+        Send a request and retry once without temperature if the model rejects it.
 
         Args:
             params: Request parameters, corrected in place when the retry fires
@@ -417,10 +498,9 @@ class ClaudeClient(BaseAIClient):
         model: str,
     ) -> str:
         """
-        Record the tokens a failed structured-output attempt was billed for.
+        Record reported usage and cost for a failed structured-output attempt.
 
-        The tool call may have succeeded with only the parsing failing, so the usage is
-        looked for on the response before the exception.
+        Prefer response usage because parsing can fail after generation succeeds.
 
         Args:
             discarded: Accumulator for this call
@@ -430,7 +510,7 @@ class ClaudeClient(BaseAIClient):
             model: Model identifier as requested
 
         Returns:
-            A phrase naming what was wasted, or an empty string if nothing was billed
+            A usage summary for logging, or an empty string if usage is unavailable
         """
         payload = raw_response if usage_counts(usage_of(raw_response)) else error_payload(error)
         counts = usage_counts(usage_of(payload))
@@ -441,7 +521,7 @@ class ClaudeClient(BaseAIClient):
         reasoning = uncounted_reasoning(
             input_tokens, output_tokens, total, payload, provider=provider, model=model
         )
-        # A cost the provider billed is the accurate one; list prices are the fallback.
+        # Prefer the provider's billed cost over a list-price estimate.
         cost = billed_cost(usage_of(payload))
         if cost is None:
             costs = calculate_cost_components(
@@ -452,6 +532,42 @@ class ClaudeClient(BaseAIClient):
 
         priced = f" (${cost:.6f})" if cost is not None else ""
         return f" Discarded attempt billed {input_tokens} input + {output_tokens} output{priced}."
+
+    def _create_response_from_optional_tool(
+        self,
+        raw_response: Any,
+        model: str,
+        response_format: Any,
+        json_schema: dict,
+        discarded: Optional[DiscardedAttempts] = None,
+    ) -> LLMResponse:
+        """
+        Build a response after checking optional-tool input for unknown keys.
+
+        Reject undeclared wrapper keys that Pydantic could ignore when filling
+        defaults. Schemas permitting extra keys or declaring property patterns bypass the key
+        check. Text responses are accepted without this check.
+
+        Args:
+            raw_response: Raw Anthropic response object
+            model: Model identifier
+            response_format: Pydantic model for validation
+            json_schema: JSON schema the tool was offered with
+            discarded: Usage from earlier failed attempts
+
+        Returns:
+            LLMResponse object
+
+        Raises:
+            ValueError: If the key check identifies an undeclared top-level key
+        """
+        for block in raw_response.content or []:
+            if block.type == "tool_use" and block.name == "extract_structured_data":
+                unknown = _unknown_keys(json_schema, block.input)
+                if unknown:
+                    raise ValueError(f"tool input has keys the schema does not define: {unknown}")
+                break
+        return self._create_response_from_tool(raw_response, model, response_format, discarded)
 
     def _create_response_from_tool(
         self,

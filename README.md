@@ -222,6 +222,11 @@ person = Person(**person_data)
 print(f"{person.name}, {person.age}, {person.occupation}")
 ```
 
+Claude uses a forced tool for structured output where supported. Models that reject
+forced tools receive the original schema through an optional tool. If that attempt
+fails, the client falls back to plain text. Text responses to optional tools are
+accepted. Validate the result with your Pydantic model when schema compliance is required.
+
 ### Tool Calling (Beta)
 
 Allow models to call external tools:

@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.5.2] - 2026-09-29
+
+### Fixed
+
+- Claude models that reject forced `tool_choice` now receive the original schema through
+  an optional tool. Fable 5.1, Mythos 5.1, Opus 5.5, and Sonnet 5.5 use this route directly.
+  Failed optional-tool requests or detected wrapper keys trigger a text fallback, with
+  reported usage retained. Schemas permitting extra keys or declaring property patterns
+  skip key checks.
+
 ## [v0.5.1] - 2026-09-26
 
 ### Added
@@ -137,5 +147,6 @@ for the largest omission and could cause costs to be understated by several time
 - Discarded-attempt totals cover the final attempt of a request. The retry wrapper re-enters
   the provider call on failure, and the accumulator starts fresh each time.
 
+[v0.5.2]: https://github.com/RISE-UNIBAS/generic_llm_api_client/releases/tag/v0.5.2
 [v0.5.1]: https://github.com/RISE-UNIBAS/generic_llm_api_client/releases/tag/v0.5.1
 [v0.5.0]: https://github.com/RISE-UNIBAS/generic_llm_api_client/releases/tag/v0.5.0

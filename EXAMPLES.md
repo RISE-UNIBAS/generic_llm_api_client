@@ -221,7 +221,7 @@ response = client.prompt(
     response_format=ResearchPaper
 )
 
-# Claude uses tools API for structured output
+# Validate the returned JSON against the requested model.
 paper = ResearchPaper(**json.loads(response.text))
 ```
 
